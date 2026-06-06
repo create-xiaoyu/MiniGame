@@ -1,0 +1,13 @@
+{
+  "itemGroup.minigame": "Example Mod Tab",
+  "block.minigame.example_block": "Example Block",
+  "item.minigame.example_item": "Example Item",
+
+  "minigame.configuration.title": "MiniGame Configs",
+  "minigame.configuration.section.minigame.common.toml": "MiniGame Configs",
+  "minigame.configuration.section.minigame.common.toml.title": "MiniGame Configs",
+  "minigame.configuration.items": "Item List",
+  "minigame.configuration.logDirtBlock": "Log Dirt Block",
+  "minigame.configuration.magicNumberIntroduction": "Magic Number Text",
+  "minigame.configuration.magicNumber": "Magic Number"
+}
