@@ -1,19 +1,19 @@
-# CarvsBlockBreak logic notes and NeoForge porting guide
+# CarvsBlockBreak Logic Notes and NeoForge Porting Guide
 
-本文档说明当前 Bukkit/Paper/Spigot 插件如何做到“破坏一个方块后，世界内同种方块批量破坏”，并给出在 NeoForge 上复刻该逻辑的详细设计。
+This document explains how the current Bukkit/Paper/Spigot plugin achieves “after breaking one block, batch-break blocks of the same type in the world,” and provides a detailed design for reproducing the logic on NeoForge.
 
-当前目录像是插件 jar 的解包结果，只有 `plugin.yml`、`config.yml` 和 `.class` 文件，没有 Java 源码。因此下面的 Bukkit 逻辑来自对 `.class` 的反编译分析，重点类是：
+The current directory appears to be the unpacked result of the plugin jar. It only contains `plugin.yml`, `config.yml`, and `.class` files, with no Java source code. Therefore, the Bukkit logic below comes from decompilation analysis of the `.class` files. The key classes are:
 
 - `com.carvs.blockbreak.listeners.BlockBreakListener`
 - `com.carvs.blockbreak.queue.DestructionManager`
 - `com.carvs.blockbreak.queue.ChunkDestructionTask`
 - `com.carvs.blockbreak.config.PluginConfig`
 
-## 目标行为
+## Target Behavior
 
-玩家破坏一个方块时，插件记录这个方块的类型和坐标，然后在一个指定半径内查找同种方块并删除。
+When a player breaks a block, the plugin records that block’s type and coordinates, then searches within a specified radius for blocks of the same type and removes them.
 
-默认配置中：
+Default configuration:
 
 - `destruction.radius: 3000`
 - `destruction.match-block-type: true`
@@ -23,75 +23,75 @@
 - `performance.tick-delay: 1`
 - `performance.loaded-chunks-only: false`
 
-也就是说，它默认会在触发点周围 3000 格的方形区域内处理同种方块。实际覆盖范围是 `6000 x 6000` 的水平区域。
+In other words, by default it processes blocks of the same type within a square area of 3000 blocks around the trigger point. The actual horizontal coverage is a `6000 x 6000` area.
 
-## 一句话总结性能策略
+## One-Sentence Summary of the Performance Strategy
 
-它不是一次性把世界内所有方块都扫描并删除，而是：
+It does not scan and delete all blocks in the world at once. Instead, it:
 
-1. 先把目标区域拆成 chunk 队列。
-2. 每 tick 只处理一小批 chunk。
-3. 每 tick 使用毫秒预算强制停止。
-4. 每个 chunk 内先用轻量快照读取方块类型。
-5. 只有真正命中的方块才拿真实 `Block` 对象做修改。
-6. 远离玩家的方块直接静默删除，不掉落物品。
-7. 静默删除时禁用物理更新，避免连锁方块更新。
+1. Splits the target area into a chunk queue.
+2. Processes only a small batch of chunks each tick.
+3. Enforces a millisecond budget per tick.
+4. Uses lightweight snapshots to read block types inside each chunk.
+5. Only obtains real `Block` objects for blocks that actually match.
+6. Silently removes blocks far away from the player without dropping items.
+7. Disables physics updates during silent removal to avoid chain block updates.
 
-这几个点合起来，才是它不容易卡顿的原因。
+Together, these points are why the plugin is relatively resistant to lag.
 
-## Bukkit 插件触发链路
+## Bukkit Plugin Trigger Flow
 
 ### 1. `BlockBreakListener.onBlockBreak`
 
-当玩家破坏方块时：
+When a player breaks a block:
 
-1. 读取玩家、世界、配置。
-2. 检查黑名单世界。
-3. 如果当前世界已有破坏任务，且配置不允许并发任务，则拒绝。
-4. 如果需要确认，则要求玩家 5 秒内再次破坏方块。
-5. 读取被破坏方块类型：
+1. Read the player, world, and configuration.
+2. Check the world blacklist.
+3. If the current world already has a destruction task and concurrent tasks are not allowed by configuration, reject the trigger.
+4. If confirmation is required, require the player to break a block again within 5 seconds.
+5. Read the broken block type:
    - `brokenBlockType = event.getBlock().getType()`
-6. 读取被破坏方块位置：
+6. Read the broken block location:
    - `blockLocation = event.getBlock().getLocation()`
-7. 如果 `match-block-type = true`，目标类型就是这个 `Material`。
-8. 调用：
+7. If `match-block-type = true`, the target type is this `Material`.
+8. Call:
    - `DestructionManager.startDestruction(world, player, targetMaterial, blockLocation)`
 
-注意：反编译结果显示，类里存在 `isPlayerAuthorized`，但 `onBlockBreak` 里没有看到它被调用。因此 `allowed-players`、权限配置可能没有实际限制触发者。配置里也有 cooldown 相关字段和方法，但主破坏事件里没有看到实际冷却判断。
+Note: The decompiled result shows that the class contains `isPlayerAuthorized`, but it does not appear to be called inside `onBlockBreak`. Therefore, `allowed-players` and permission-related configuration may not actually restrict who can trigger the plugin. The configuration also contains cooldown-related fields and methods, but no actual cooldown check was observed in the main block break event.
 
 ### 2. `DestructionManager.startDestruction`
 
-管理器负责创建并保存任务。
+The manager is responsible for creating and storing tasks.
 
-核心行为：
+Core behavior:
 
-1. 按玩家读取本次掉落半径。
-2. 按玩家读取本次最大掉落数。
-3. 创建 `ChunkDestructionTask`。
-4. 把任务加入 `activeTasks`：
-   - key 是世界名
-   - value 是该世界正在运行的任务列表
-5. 调用任务的 `start()`。
-6. 任务结束时从 `activeTasks` 移除。
+1. Read this run’s drop radius by player.
+2. Read this run’s maximum drop count by player.
+3. Create a `ChunkDestructionTask`.
+4. Add the task to `activeTasks`:
+   - key: world name
+   - value: list of currently running tasks in that world
+5. Call the task’s `start()`.
+6. Remove the task from `activeTasks` when it finishes.
 
-它支持同一个世界多个任务并发，因为 `activeTasks` 的 value 是一个任务列表，不是单个任务。
+It supports multiple concurrent tasks in the same world because the value of `activeTasks` is a task list, not a single task.
 
-## `ChunkDestructionTask` 的完整工作流程
+## Complete Workflow of `ChunkDestructionTask`
 
-这是核心类。它负责：
+This is the core class. It is responsible for:
 
-- 生成 chunk 队列
-- 按 tick 调度
-- 控制每 tick 最大耗时
-- 加载或跳过 chunk
-- 扫描 chunk 内方块
-- 破坏目标方块
-- 统计进度
-- 更新 action bar / boss bar / console log
+- Generating the chunk queue
+- Scheduling work by tick
+- Controlling the maximum time spent per tick
+- Loading or skipping chunks
+- Scanning blocks inside each chunk
+- Destroying target blocks
+- Tracking progress
+- Updating the action bar / boss bar / console log
 
-### 1. 任务初始化
+### 1. Task Initialization
 
-任务保存这些关键字段：
+The task stores these key fields:
 
 - `world`
 - `initiator`
@@ -110,40 +110,40 @@
 - `startTime`
 - `cancelled`
 
-其中 `targetMaterials` 为 null 或空集合时，表示破坏所有非空气方块。正常破坏同种方块时，它只包含一个 `Material`。
+When `targetMaterials` is null or empty, it means all non-air blocks should be destroyed. In normal same-block destruction mode, it contains only one `Material`.
 
 ### 2. `start()`
 
-任务启动时：
+When the task starts:
 
-1. 记录 `startTime`。
-2. 调用 `queueAllWorldChunks()` 生成 chunk 队列。
-3. 如果没有 chunk，直接结束。
-4. 播放开始音效，创建 boss bar。
-5. 日志输出本次任务目标、chunk 总数、半径、世界名。
-6. 创建一个 `BukkitRunnable`：
+1. Record `startTime`.
+2. Call `queueAllWorldChunks()` to generate the chunk queue.
+3. If there are no chunks, finish immediately.
+4. Play the start sound and create the boss bar.
+5. Log the task target, total chunk count, radius, and world name.
+6. Create a `BukkitRunnable`:
    - delay = 0
    - period = `config.tickDelay`
-7. 每次 tick 执行：
-   - 如果取消：清理并停止任务。
-   - 调用 `processChunks()`。
-   - 调用 `preloadChunks()`。
-   - 如果 `chunkIndex >= chunkList.size()`，调用 `complete()` 并停止任务。
+7. On each tick:
+   - If cancelled: clean up and stop the task.
+   - Call `processChunks()`.
+   - Call `preloadChunks()`.
+   - If `chunkIndex >= chunkList.size()`, call `complete()` and stop the task.
 
 ### 3. `queueAllWorldChunks()`
 
-这个方法把半径内的 chunk 排队。
+This method queues chunks within the radius.
 
-#### 坐标换算
+#### Coordinate Conversion
 
-它先把中心方块坐标转成 chunk 坐标：
+It first converts the center block coordinates to chunk coordinates:
 
 ```text
 centerChunkX = centerBlockX >> 4
 centerChunkZ = centerBlockZ >> 4
 ```
 
-然后把破坏半径换成 chunk 范围：
+Then it converts the destruction radius into a chunk range:
 
 ```text
 minChunkX = (centerBlockX - radius) >> 4
@@ -152,23 +152,23 @@ minChunkZ = (centerBlockZ - radius) >> 4
 maxChunkZ = (centerBlockZ + radius) >> 4
 ```
 
-注意：这里用右移 `>> 4`，等价于按 16 做向下取整的 chunk 坐标换算。NeoForge 复刻时不要用普通 `/ 16`，因为负坐标会出错。应使用 `SectionPos.blockToSectionCoord(blockX)` 或 `Math.floorDiv(blockX, 16)`。
+Note: It uses right shift `>> 4`, which is equivalent to floor division by 16 for chunk coordinate conversion. When reproducing this in NeoForge, do not use normal `/ 16`, because negative coordinates will be wrong. Use `SectionPos.blockToSectionCoord(blockX)` or `Math.floorDiv(blockX, 16)` instead.
 
-#### 扫描 `.mca` region 文件
+#### Scanning `.mca` Region Files
 
-插件会读取世界目录下的：
+The plugin reads:
 
 ```text
 <world>/region/*.mca
 ```
 
-每个 `.mca` 文件名类似：
+Each `.mca` file name is similar to:
 
 ```text
 r.<regionX>.<regionZ>.mca
 ```
 
-region 文件中，一个 region 包含 `32 x 32` 个 chunk。插件读取 `.mca` 文件前 4096 字节 location table：
+A region contains `32 x 32` chunks. The plugin reads the first 4096 bytes of the `.mca` file as the location table:
 
 ```text
 entryIndex = 4 * (localChunkX + localChunkZ * 32)
@@ -176,45 +176,45 @@ offset = header[entryIndex] << 16 | header[entryIndex + 1] << 8 | header[entryIn
 sectorCount = header[entryIndex + 3]
 ```
 
-如果：
+If:
 
 ```text
 offset != 0 && sectorCount != 0
 ```
 
-则认为这个 chunk 在磁盘上实际存在。
+then the chunk is considered to actually exist on disk.
 
-如果读取 `.mca` 文件失败，插件会保守地把这个 region 的 1024 个 chunk 全部视为存在。
+If reading the `.mca` file fails, the plugin conservatively treats all 1024 chunks in that region as existing.
 
-#### 优先处理已存在 chunk
+#### Prioritizing Existing Chunks
 
-插件把半径内 chunk 分成两组：
+The plugin divides chunks within the radius into two groups:
 
 1. `existingChunks`
-   - `.mca` header 显示确实存在的 chunk
+   - chunks confirmed to exist by the `.mca` header
 2. `possibleChunks`
-   - 半径内但没有在 `.mca` header 中确认存在的 chunk
+   - chunks within the radius but not confirmed by the `.mca` header
 
-两组分别按距离中心 chunk 的平方距离排序：
+Both groups are sorted separately by squared distance from the center chunk:
 
 ```text
 distance = (chunkX - centerChunkX)^2 + (chunkZ - centerChunkZ)^2
 ```
 
-最终队列顺序：
+Final queue order:
 
 ```text
 chunkList = existingChunks sorted by distance
 chunkList += possibleChunks sorted by distance
 ```
 
-这样附近 chunk 会优先破坏，已经生成过的 chunk 会优先处理。
+This way, nearby chunks are processed first, and chunks that have already been generated are prioritized.
 
 ### 4. `processChunks()`
 
-这是每 tick 的主处理函数。
+This is the main per-tick processing function.
 
-核心限流逻辑：
+Core throttling logic:
 
 ```text
 startNanos = System.nanoTime()
@@ -234,29 +234,29 @@ while chunksProcessedThisTick < maxChunks:
         break
 ```
 
-这意味着 `chunks-per-tick` 是安全上限，而真正控制卡顿的是 `max-ms-per-tick`。
+This means `chunks-per-tick` is only a safety upper bound; the real anti-lag control is `max-ms-per-tick`.
 
-当前配置是每 tick 最多 15ms。Minecraft 服务器 20 TPS 时每 tick 约 50ms，因此理论上会保留一部分主线程时间给其他逻辑。
+The current configuration allows at most 15 ms per tick. At 20 TPS, a Minecraft server tick is about 50 ms, so theoretically some main-thread time is left for other logic.
 
-#### chunk 加载策略
+#### Chunk Loading Strategy
 
-每个 chunk 处理前：
+Before processing each chunk:
 
-1. 判断是否已加载：
+1. Check whether it is loaded:
    - `world.isChunkLoaded(x, z)`
-2. 如果未加载且 `loaded-chunks-only = true`：
-   - 跳过该 chunk
+2. If it is not loaded and `loaded-chunks-only = true`:
+   - skip the chunk
    - `skippedChunks++`
    - `processedChunks++`
-3. 如果未加载且 `loaded-chunks-only = false`：
-   - 调用 `world.loadChunk(x, z, true)`
-   - 然后 `world.getChunkAt(x, z)`
+3. If it is not loaded and `loaded-chunks-only = false`:
+   - call `world.loadChunk(x, z, true)`
+   - then call `world.getChunkAt(x, z)`
 
-风险：`loadChunk(x, z, true)` 可能导致同步加载甚至生成 chunk。大半径下，如果很多 chunk 没加载，这仍然可能卡。
+Risk: `loadChunk(x, z, true)` may cause synchronous loading or even chunk generation. With a large radius, if many chunks are not loaded, this can still cause lag.
 
 ### 5. `preloadChunks()`
 
-每 tick 处理完之后，插件会提前请求后续 50 个 chunk：
+After each tick’s processing, the plugin requests the next 50 chunks in advance:
 
 ```text
 start = current chunkIndex
@@ -266,99 +266,99 @@ for i in start..end:
         world.getChunkAtAsync(x, z)
 ```
 
-这一步用于降低后续 tick 同步加载 chunk 的概率。
+This is used to reduce the chance of synchronous chunk loading in later ticks.
 
-注意：它只是预加载 chunk，不会异步修改方块。Bukkit/Paper 中实际世界修改仍必须在主线程完成。
+Note: It only preloads chunks. It does not modify blocks asynchronously. In Bukkit/Paper, actual world modification must still be performed on the main thread.
 
 ### 6. `destroyChunkBlocks(chunk)`
 
-这是每个 chunk 内真正删除方块的方法。
+This method performs the actual block removal inside each chunk.
 
-#### 读取快照
+#### Reading the Snapshot
 
-插件先拿 `ChunkSnapshot`：
+The plugin first obtains a `ChunkSnapshot`:
 
 ```java
 ChunkSnapshot snapshot = chunk.getChunkSnapshot();
 ```
 
-随后大部分读取都来自 snapshot：
+Most block reads are then performed from the snapshot:
 
 ```java
 Material blockType = snapshot.getBlockType(localX, y, localZ);
 ```
 
-这样避免对每个坐标都调用真实世界对象。只有命中的方块，才调用：
+This avoids calling real world objects for every coordinate. Only when a block matches does it call:
 
 ```java
 Block block = chunk.getBlock(localX, y, localZ);
 ```
 
-这是一个重要优化。
+This is an important optimization.
 
-#### 扫描顺序
+#### Scan Order
 
-它遍历 chunk 内的 `16 x 16` 水平列：
+It iterates over the `16 x 16` horizontal columns inside the chunk:
 
 ```text
 for localX in 0..15:
   for localZ in 0..15:
 ```
 
-每列先求最高方块：
+For each column, it first finds the highest block:
 
 ```java
 highestY = world.getHighestBlockYAt(worldX, worldZ, HeightMap.WORLD_SURFACE);
 ```
 
-然后从 `highestY` 往 `world.getMinHeight()` 向下扫：
+Then it scans downward from `highestY` to `world.getMinHeight()`:
 
 ```text
 for y = highestY down to minY:
 ```
 
-这样不会扫描世界最高高度以上的空气。
+This avoids scanning air above the world surface.
 
-#### 跳过空气
+#### Skipping Air
 
-如果 snapshot 中的方块类型是：
+If the block type in the snapshot is:
 
 - `AIR`
 - `CAVE_AIR`
 - `VOID_AIR`
 
-则直接跳过。
+it is skipped directly.
 
-#### 匹配目标方块
+#### Matching Target Blocks
 
-如果 `targetMaterials` 不为空：
-
-```text
-只破坏 targetMaterials 中包含的 Material
-```
-
-如果 `targetMaterials` 为空：
+If `targetMaterials` is not empty:
 
 ```text
-破坏所有非空气方块
+Only destroy Materials contained in targetMaterials
 ```
 
-当前插件默认是同种方块模式，因此通常只匹配一个 `Material`。
+If `targetMaterials` is empty:
 
-#### 特殊处理 waterlogged
+```text
+Destroy all non-air blocks
+```
 
-当目标材料包含 `WATER` 时，插件会额外处理 waterlogged 方块：
+The current plugin defaults to same-block mode, so normally only one `Material` is matched.
 
-1. 如果当前方块本身不是 `WATER`，但它的 `BlockData` 实现了 `Waterlogged`。
-2. 且 `isWaterlogged() == true`。
-3. 那么设置 `waterlogged = false`。
-4. 不删除该方块本体。
+#### Special Handling for Waterlogged Blocks
 
-也就是说，目标是水时，插件不只删除水源/流水，也会把含水楼梯、含水台阶等方块中的水移除。
+When the target material contains `WATER`, the plugin additionally handles waterlogged blocks:
 
-#### 掉落半径
+1. If the current block itself is not `WATER`, but its `BlockData` implements `Waterlogged`.
+2. And `isWaterlogged() == true`.
+3. Then set `waterlogged = false`.
+4. Do not delete the block itself.
 
-每个方块判断是否在掉落半径内：
+In other words, when the target is water, the plugin not only deletes water source/flowing water blocks, but also removes water from waterlogged stairs, slabs, and similar blocks.
+
+#### Drop Radius
+
+For each block, it checks whether it is within the drop radius:
 
 ```text
 dx = abs(worldX - centerX)
@@ -366,155 +366,155 @@ dz = abs(worldZ - centerZ)
 withinDropRadius = dx <= dropRadius && dz <= dropRadius
 ```
 
-注意它只看 X/Z，不看 Y。
+Note that it only considers X/Z, not Y.
 
-#### 删除方式
+#### Removal Method
 
-如果目标方块是流体：
+If the target block is a fluid:
 
 - `WATER`
 - `LAVA`
 - `BUBBLE_COLUMN`
 
-则直接静默删除。
+it is directly removed silently.
 
-如果不是流体，且在掉落半径内，且没有超过 `maxDrops`：
+If it is not a fluid, is within the drop radius, and has not exceeded `maxDrops`:
 
 ```java
 block.breakNaturally();
 totalDrops++;
 ```
 
-否则：
+Otherwise:
 
 ```java
 block.setType(Material.AIR, false);
 ```
 
-这里的 `false` 非常关键：它表示不应用物理更新。这样不会让红石、沙子、水流、邻居方块更新全部连锁触发。
+The `false` is crucial: it means physics updates are not applied. This prevents redstone, sand, fluids, neighboring blocks, etc. from triggering large chain updates.
 
-#### `maxDrops` 的真实语义
+#### Real Meaning of `maxDrops`
 
-配置名叫 `max-drops`，但反编译看起来它实际限制的是“调用 `breakNaturally()` 的方块次数”，不是最终生成的 item entity 数量。
+The configuration name is `max-drops`, but based on the decompiled code, it appears to actually limit the number of blocks for which `breakNaturally()` is called, not the final number of item entities spawned.
 
-一个方块可能掉多个物品，也可能不掉物品。因此 NeoForge 复刻时可以保留这个语义，命名为 `maxNaturalBreakBlocks` 会更准确。
+One block may drop multiple items, or may drop nothing. Therefore, when reproducing this in NeoForge, it is reasonable to preserve this semantic. Naming it `maxNaturalBreakBlocks` would be more accurate.
 
-## 为什么这个插件相对不卡
+## Why This Plugin Is Relatively Lag-Resistant
 
-### 1. 按 tick 分批
+### 1. Batched by Tick
 
-它不会在一次事件中完成所有工作，而是用定时任务分散到多个 tick。
+It does not complete all work inside a single event. Instead, it spreads the work across multiple ticks using scheduled tasks.
 
-### 2. 毫秒预算
+### 2. Millisecond Budget
 
-`max-ms-per-tick` 会硬性限制每 tick 的处理时间。即使 `chunks-per-tick` 设置很高，只要耗时超过预算也会停。
+`max-ms-per-tick` hard-limits the processing time per tick. Even if `chunks-per-tick` is set very high, processing stops once the time budget is exceeded.
 
-### 3. 按 chunk 而不是按全世界无序扫描
+### 3. Chunk-Based Rather Than Unordered Whole-World Scanning
 
-半径被换算成 chunk 队列，每次处理队列中的一部分。
+The radius is converted into a chunk queue, and each tick processes part of that queue.
 
-### 4. 优先处理真实存在的 chunk
+### 4. Prioritizes Chunks That Actually Exist
 
-通过 `.mca` header 判断 chunk 是否存在，减少无意义处理。
+It uses `.mca` headers to determine whether chunks exist, reducing meaningless processing.
 
-### 5. 使用 `ChunkSnapshot`
+### 5. Uses `ChunkSnapshot`
 
-先用快照读取方块类型，减少真实世界对象访问。
+It first reads block types from a snapshot, reducing access to real world objects.
 
-### 6. 只对命中方块执行真实修改
+### 6. Performs Real Modification Only on Matching Blocks
 
-非目标方块只读 snapshot，不调用真实 `Block`。
+Non-target blocks are only read from the snapshot; no real `Block` object is retrieved for them.
 
-### 7. 远处不掉落
+### 7. No Drops for Distant Blocks
 
-远离触发点的方块直接删掉，不生成 item entity。
+Blocks far away from the trigger point are directly removed without generating item entities.
 
-### 8. 删除时禁用物理更新
+### 8. Disables Physics Updates During Removal
 
-`setType(AIR, false)` 避免大量邻居更新和物理连锁。
+`setType(AIR, false)` avoids large amounts of neighbor updates and physics chains.
 
-## 当前插件的注意点和潜在问题
+## Notes and Potential Issues in the Current Plugin
 
-### `blocks-per-chunk-tick` 没看到实际使用
+### `blocks-per-chunk-tick` Does Not Appear to Be Used
 
-配置文件有：
+The configuration file contains:
 
 ```yml
 performance:
   blocks-per-chunk-tick: 3000
 ```
 
-`PluginConfig` 也读取了这个值，但 `ChunkDestructionTask.destroyChunkBlocks` 中没有看到它控制循环。也就是说原插件的实际限流主要是：
+`PluginConfig` also reads this value, but it was not observed controlling the loop inside `ChunkDestructionTask.destroyChunkBlocks`. In other words, the original plugin’s actual throttling mainly consists of:
 
-- 每 tick 最大 chunk 数
-- 每 tick 最大毫秒数
+- maximum chunks per tick
+- maximum milliseconds per tick
 
-不是“每 tick 最大方块数”。
+not “maximum blocks per tick.”
 
-在 NeoForge 复刻时，建议真正实现 `blocks-per-chunk-tick`，否则单个高密度 chunk 仍然可能造成微卡。
+When reproducing this in NeoForge, it is recommended to actually implement `blocks-per-chunk-tick`; otherwise, a single dense chunk may still cause micro-lag.
 
-### 同步 chunk 加载仍可能卡
+### Synchronous Chunk Loading May Still Cause Lag
 
-`loaded-chunks-only = false` 时，原插件会同步调用 `loadChunk(x, z, true)`。如果目标区域包含大量未加载或未生成 chunk，会有明显风险。
+When `loaded-chunks-only = false`, the original plugin synchronously calls `loadChunk(x, z, true)`. If the target area contains many unloaded or ungenerated chunks, this carries significant risk.
 
-NeoForge 版本建议优先做：
+The NeoForge version should preferably use:
 
-- 非生成式加载已存在 chunk
-- 异步请求 chunk
-- 未加载完成的 chunk 延后处理
+- non-generating loading of existing chunks
+- asynchronous chunk requests
+- deferring chunks that have not finished loading
 
-不要在单个 server tick 中同步生成大量 chunk。
+Do not synchronously generate a large number of chunks in a single server tick.
 
-### region 文件扫描发生在任务启动阶段
+### Region File Scanning Happens During Task Startup
 
-`queueAllWorldChunks()` 会读取 `.mca` 文件头。半径很大、region 文件很多时，启动瞬间也可能有磁盘 IO 压力。
+`queueAllWorldChunks()` reads `.mca` file headers. If the radius is large and there are many region files, there may also be disk I/O pressure at startup.
 
-NeoForge 复刻时可以把 region header 扫描放到后台线程，然后把结果提交回服务器线程开始任务。但后台线程不能访问 `ServerLevel` 的可变世界状态。
+In the NeoForge reproduction, region header scanning can be moved to a background thread, and the result can then be submitted back to the server thread to start the task. However, background threads must not access mutable `ServerLevel` world state.
 
-### 权限和冷却配置疑似未生效
+### Permission and Cooldown Configuration May Not Be Effective
 
-反编译结果中看到权限和冷却相关方法，但主破坏监听里没有看到调用。NeoForge 复刻时应明确实现：
+The decompiled result shows permission and cooldown-related methods, but no calls to them were observed in the main block break listener. In the NeoForge reproduction, the following should be explicitly implemented:
 
-- 谁能触发
-- 冷却时间
-- 是否允许任务并发
-- 是否需要二次确认
+- who can trigger the task
+- cooldown time
+- whether concurrent tasks are allowed
+- whether secondary confirmation is required
 
-## NeoForge 复刻目标
+## NeoForge Reproduction Goals
 
-NeoForge 复刻不需要逐行照搬 Bukkit API，而要保留这些行为语义：
+The NeoForge reproduction does not need to copy the Bukkit API line by line. It should preserve these behavior semantics:
 
-1. 玩家破坏方块后启动批量破坏任务。
-2. 默认只破坏同种方块。
-3. 任务以触发点为中心，处理指定半径内的 chunk。
-4. 每 tick 按时间预算处理。
-5. 世界修改只在逻辑服务端线程执行。
-6. 可以异步准备 chunk 队列或请求 chunk，但不能异步 `setBlock`。
-7. 远处方块静默删除。
-8. 近处方块可自然掉落。
-9. 静默删除不触发邻居更新。
-10. 支持水和 waterlogged 的特殊处理。
+1. Start a batch destruction task after a player breaks a block.
+2. By default, only destroy blocks of the same type.
+3. Use the trigger point as the center and process chunks within the specified radius.
+4. Process work each tick according to a time budget.
+5. Perform world modification only on the logical server thread.
+6. Chunk queue preparation or chunk requests may be asynchronous, but `setBlock` must not be asynchronous.
+7. Silently remove distant blocks.
+8. Naturally drop nearby blocks.
+9. Silent removal must not trigger neighbor updates.
+10. Support special handling for water and waterlogged blocks.
 
-## NeoForge 官方概念对照
+## NeoForge Official Concept Mapping
 
-以下是复刻时需要用到的 NeoForge / Minecraft 概念：
+The following NeoForge / Minecraft concepts are needed for the reproduction:
 
-- 事件注册使用 `NeoForge.EVENT_BUS`。
-- 方块破坏可监听 `BlockEvent.BreakEvent`。官方文档说明它在真正破坏阶段服务端触发。
-- 每 tick 执行任务可监听 server tick 或 level tick 事件。具体事件类名会随 NeoForge 版本变化，建议按目标版本确认。
-- 修改世界方块使用 `Level#setBlock(BlockPos, BlockState, int)`。
-- `setBlock` 的第三个参数是 update flags。不要使用会触发大量邻居更新的 flag。
-- 不要在客户端逻辑或后台线程修改 `ServerLevel`。
+- Register events using `NeoForge.EVENT_BUS`.
+- Listen to block breaking via `BlockEvent.BreakEvent`. The official documentation states it is fired server-side during the actual breaking phase.
+- Run tasks each tick by listening to server tick or level tick events. The exact event class name may vary by NeoForge version, so confirm it for the target version.
+- Modify world blocks using `Level#setBlock(BlockPos, BlockState, int)`.
+- The third parameter of `setBlock` is update flags. Do not use flags that trigger massive neighbor updates.
+- Do not modify `ServerLevel` from client logic or background threads.
 
-参考文档：
+Reference documentation:
 
 - NeoForge Events: https://docs.neoforged.net/docs/1.21.4/concepts/events/
 - NeoForge Block breaking pipeline: https://docs.neoforged.net/docs/1.21.3/blocks/#breaking-a-block
 - NeoForge `Level#setBlock` update flags: https://docs.neoforged.net/docs/1.21.4/blocks/states/#levelsetblock
 
-## 推荐 NeoForge 类设计
+## Recommended NeoForge Class Design
 
-建议拆成这些类：
+Suggested class layout:
 
 ```text
 com.example.sameblockbreak
@@ -537,7 +537,7 @@ com.example.sameblockbreak
 
 ### `ModConfig`
 
-配置字段建议：
+Recommended configuration fields:
 
 ```java
 public final class ModConfig {
@@ -562,20 +562,20 @@ public final class ModConfig {
 }
 ```
 
-建议 NeoForge 版本把 `allowChunkGeneration` 独立出来，不要直接复刻 Bukkit 的 `loadChunk(..., true)`。如果要保护服务器，默认不要生成新区块。
+In the NeoForge version, it is recommended to separate `allowChunkGeneration` from the Bukkit behavior instead of directly reproducing `loadChunk(..., true)`. To protect servers, do not generate new chunks by default.
 
 ### `DestructionManager`
 
-职责：
+Responsibilities:
 
-- 保存所有活跃任务。
-- 接收事件启动任务。
-- 每 tick 调用任务。
-- 停止任务。
-- 查询进度。
-- 存储玩家自定义 drop radius / max drops。
+- Store all active tasks.
+- Receive events and start tasks.
+- Tick tasks every server tick.
+- Stop tasks.
+- Query progress.
+- Store custom drop radius / max drop settings per player.
 
-推荐数据结构：
+Recommended data structure:
 
 ```java
 public final class DestructionManager {
@@ -596,7 +596,7 @@ public final class DestructionManager {
 
 ### `DestructionTask`
 
-推荐字段：
+Recommended fields:
 
 ```java
 public final class DestructionTask {
@@ -626,15 +626,15 @@ public final class DestructionTask {
 }
 ```
 
-`LongList` 可以用 fastutil，也可以用普通 `LongArrayList`。如果不想引入依赖，用 `LongArrayList` 需要确认项目已有 fastutil；Minecraft 本身通常带 fastutil，但 mod 代码中仍要按目标环境确认。
+`LongList` can be from fastutil, or a normal `LongArrayList` can be used. If you do not want to add dependencies, confirm whether fastutil is already available in the project; Minecraft usually includes fastutil, but mod code should still verify this for the target environment.
 
-## NeoForge 事件处理
+## NeoForge Event Handling
 
-### 监听方块破坏
+### Listening to Block Breaking
 
-推荐监听 `BlockEvent.BreakEvent`。事件发生在服务端破坏流程中，并能拿到被破坏前的 `BlockState`。
+It is recommended to listen to `BlockEvent.BreakEvent`. The event occurs during the server-side breaking flow and can provide the `BlockState` before the block is broken.
 
-伪代码：
+Pseudocode:
 
 ```java
 @EventBusSubscriber(modid = MOD_ID, bus = EventBusSubscriber.Bus.GAME)
@@ -676,15 +676,15 @@ public final class BreakEventHandler {
 }
 ```
 
-注意：
+Notes:
 
-- 不建议取消原始破坏事件。原方块应该由正常游戏流程破坏。
-- 使用较低优先级可以让其他 mod 先取消或调整事件。
-- 如果目标版本事件 API 名字不同，让 AI 按目标 NeoForge 版本替换类名和 getter。
+- It is not recommended to cancel the original break event. The original block should be broken by the normal game flow.
+- Using a lower priority allows other mods to cancel or adjust the event first.
+- If the target version’s event API names differ, replace the class names and getter methods according to the target NeoForge version.
 
-### 每 tick 推进任务
+### Advancing Tasks Each Tick
 
-伪代码：
+Pseudocode:
 
 ```java
 @EventBusSubscriber(modid = MOD_ID, bus = EventBusSubscriber.Bus.GAME)
@@ -697,13 +697,13 @@ public final class ServerTickHandler {
 }
 ```
 
-如果目标版本没有 `ServerTickEvent.Post`，使用等价的 server tick 或 level tick post 事件。关键要求是：在逻辑服务端线程运行。
+If the target version does not have `ServerTickEvent.Post`, use an equivalent server tick or level tick post event. The key requirement is that it runs on the logical server thread.
 
-## NeoForge chunk 队列设计
+## NeoForge Chunk Queue Design
 
-### 半径换算
+### Radius Conversion
 
-使用方形半径，与 Bukkit 原插件一致：
+Use a square radius, consistent with the original Bukkit plugin:
 
 ```java
 int centerChunkX = SectionPos.blockToSectionCoord(center.getX());
@@ -715,17 +715,17 @@ int minChunkZ = SectionPos.blockToSectionCoord(center.getZ() - radius);
 int maxChunkZ = SectionPos.blockToSectionCoord(center.getZ() + radius);
 ```
 
-不要用：
+Do not use:
 
 ```java
 center.getX() / 16
 ```
 
-因为负坐标会错。
+because it is wrong for negative coordinates.
 
-### chunk key
+### Chunk Key
 
-推荐使用 Minecraft 自带的 `ChunkPos.asLong(x, z)`：
+It is recommended to use Minecraft’s built-in `ChunkPos.asLong(x, z)`:
 
 ```java
 long key = ChunkPos.asLong(chunkX, chunkZ);
@@ -733,24 +733,24 @@ int chunkX = ChunkPos.getX(key);
 int chunkZ = ChunkPos.getZ(key);
 ```
 
-如果目标版本没有这些静态方法，则使用 `new ChunkPos(key)` 或自己打包：
+If the target version does not have these static methods, use `new ChunkPos(key)` or manually pack the coordinates:
 
 ```java
 long key = ((long) chunkX & 0xffffffffL) | (((long) chunkZ & 0xffffffffL) << 32);
 ```
 
-### region 文件扫描
+### Region File Scanning
 
-原插件通过 `.mca` header 优先确认已存在 chunk。NeoForge 可以复刻，但维度目录路径要小心：
+The original plugin uses `.mca` headers to prioritize confirmed existing chunks. NeoForge can reproduce this, but dimension directory paths must be handled carefully:
 
-- 主世界通常是 `<world>/region`
-- 下界通常是 `<world>/DIM-1/region`
-- 末地通常是 `<world>/DIM1/region`
-- 自定义维度可能在 `<world>/dimensions/<namespace>/<path>/region`
+- Overworld is usually `<world>/region`
+- Nether is usually `<world>/DIM-1/region`
+- End is usually `<world>/DIM1/region`
+- Custom dimensions may be under `<world>/dimensions/<namespace>/<path>/region`
 
-如果不想依赖路径细节，可以先实现无 region 扫描版本：直接把半径内所有 chunk 加入队列，再通过非生成式 chunk load 判断是否存在。性能会差一些，但更稳。
+If you do not want to depend on path details, you can first implement a version without region scanning: directly add all chunks within the radius into the queue, then determine whether they exist through non-generating chunk loading. This will be less performant but more robust.
 
-如果实现 region 扫描，逻辑如下：
+If implementing region scanning, the logic is:
 
 ```java
 Set<Long> existing = new HashSet<>();
@@ -773,7 +773,7 @@ for each regionFile in regionDir matching "r.*.*.mca":
                 existing.add(ChunkPos.asLong(chunkX, chunkZ));
 ```
 
-然后构建队列：
+Then build the queue:
 
 ```java
 List<Long> existingInRadius = new ArrayList<>();
@@ -798,13 +798,13 @@ chunkQueue.addAll(existingInRadius);
 chunkQueue.addAll(possibleInRadius);
 ```
 
-## NeoForge chunk 加载策略
+## NeoForge Chunk Loading Strategy
 
-原 Bukkit 插件会在需要时同步加载甚至生成 chunk。NeoForge 复刻建议分成三个模式：
+The original Bukkit plugin synchronously loads, or even generates, chunks when needed. The NeoForge reproduction should preferably divide this into three modes:
 
-### 模式 A：只处理已加载 chunk
+### Mode A: Only Process Loaded Chunks
 
-最安全，性能最好，但不完整：
+Safest and best for performance, but incomplete:
 
 ```java
 if (!level.hasChunk(chunkX, chunkZ)) {
@@ -813,13 +813,13 @@ if (!level.hasChunk(chunkX, chunkZ)) {
 }
 ```
 
-适合服务器稳定优先。
+Suitable when server stability is the priority.
 
-### 模式 B：只加载已存在 chunk，不生成
+### Mode B: Only Load Existing Chunks, Do Not Generate
 
-推荐默认模式。目标是覆盖磁盘上已有 chunk，但不生成新地形。
+Recommended default mode. The goal is to cover chunks that already exist on disk without generating new terrain.
 
-伪代码：
+Pseudocode:
 
 ```java
 ChunkAccess chunk = level.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, false);
@@ -829,18 +829,18 @@ if (!(chunk instanceof LevelChunk levelChunk)) {
 }
 ```
 
-具体 API 名会随 Minecraft / NeoForge 版本变化。要求 AI 按目标版本确认：
+The exact API names vary by Minecraft / NeoForge version. Confirm for the target version:
 
-- 如何检查 chunk 是否已经加载
-- 如何非生成式获取 chunk
-- 如何异步请求 chunk
-- 如何在 future 完成后回到 server thread
+- how to check whether a chunk is already loaded
+- how to get a chunk without generation
+- how to request a chunk asynchronously
+- how to return to the server thread after the future completes
 
-### 模式 C：允许生成 chunk
+### Mode C: Allow Chunk Generation
 
-最接近原插件的 `loadChunk(x, z, true)`，但风险最高。
+This is closest to the original plugin’s `loadChunk(x, z, true)`, but it has the highest risk.
 
-只建议在明确需要“半径内未生成区块也算世界”的情况下打开：
+Only enable it when it is explicitly necessary for “ungenerated chunks within the radius should also count as part of the world”:
 
 ```java
 if (config.allowChunkGeneration) {
@@ -848,27 +848,27 @@ if (config.allowChunkGeneration) {
 }
 ```
 
-大半径下不要默认开启。
+Do not enable this by default for large radii.
 
-## NeoForge 方块扫描策略
+## NeoForge Block Scanning Strategy
 
-NeoForge 没有 Bukkit `ChunkSnapshot` 的完全等价物。可以用两种策略。
+NeoForge does not have a complete equivalent of Bukkit’s `ChunkSnapshot`. Two strategies can be used.
 
-### 策略 A：简单安全版
+### Strategy A: Simple and Safe Version
 
-使用 `ServerLevel#getBlockState(pos)` 读取方块，每 tick 严格限制方块数量和耗时。
+Use `ServerLevel#getBlockState(pos)` to read blocks, and strictly limit the number of blocks and the time spent per tick.
 
-优点：
+Advantages:
 
-- 实现简单。
-- API 稳定。
-- 不依赖内部 chunk section 数据结构。
+- Simple to implement.
+- Stable API.
+- Does not depend on internal chunk section data structures.
 
-缺点：
+Disadvantages:
 
-- 比 `ChunkSnapshot` / section palette 扫描慢。
+- Slower than `ChunkSnapshot` / section palette scanning.
 
-伪代码：
+Pseudocode:
 
 ```java
 while (cursor.hasMore() && blocksThisTick < config.blocksPerTick && now < deadline) {
@@ -888,22 +888,22 @@ while (cursor.hasMore() && blocksThisTick < config.blocksPerTick && now < deadli
 }
 ```
 
-这个版本一定要实现 `ChunkCursor`，不要一次性扫完整个 chunk。
+This version must implement `ChunkCursor`; do not scan a full chunk all at once.
 
-### 策略 B：高性能 section 版
+### Strategy B: High-Performance Section Version
 
-使用 `LevelChunk` 的 section 数据结构，按 section 跳过不可能包含目标方块的区域。
+Use `LevelChunk` section data structures and skip sections that cannot contain matching blocks.
 
-目标思路：
+Core idea:
 
-1. 获取 `LevelChunk`。
-2. 遍历 chunk section。
-3. 如果 section 全空气，跳过。
-4. 如果目标是某个 block，使用类似 `section.maybeHas(state -> state.is(targetBlock))` 的 API 跳过不包含目标的 section。
-5. 对可能命中的 section 扫描 `16 x 16 x 16`。
-6. 命中后再调用 `level.setBlock` 或 `level.destroyBlock`。
+1. Get the `LevelChunk`.
+2. Iterate through chunk sections.
+3. If a section is all air, skip it.
+4. If the target is a specific block, use an API similar to `section.maybeHas(state -> state.is(targetBlock))` to skip sections that do not contain the target.
+5. Scan `16 x 16 x 16` inside sections that may contain matches.
+6. After a match is found, call `level.setBlock` or `level.destroyBlock`.
 
-伪代码：
+Pseudocode:
 
 ```java
 for each LevelChunkSection section in chunk.getSections():
@@ -922,13 +922,13 @@ for each LevelChunkSection section in chunk.getSections():
                 ...
 ```
 
-该方案最接近 Bukkit 插件“先轻量读，命中再修改”的思想。但 Minecraft 内部类和方法名容易随版本变化，所以要让 AI 按目标 NeoForge 版本确认。
+This approach is closest to the Bukkit plugin’s idea of “lightweight reads first, real modification only after a match.” However, internal Minecraft classes and method names can change between versions, so they should be confirmed according to the target NeoForge version.
 
-## `ChunkCursor`：实现真正的 `blocks-per-chunk-tick`
+## `ChunkCursor`: Actually Implementing `blocks-per-chunk-tick`
 
-原插件没有真正用上 `blocks-per-chunk-tick`。NeoForge 复刻建议补上。
+The original plugin does not truly use `blocks-per-chunk-tick`. The NeoForge reproduction should add this properly.
 
-`ChunkCursor` 保存当前 chunk 的扫描进度：
+`ChunkCursor` stores the current scan progress inside a chunk:
 
 ```java
 public final class ChunkCursor {
@@ -947,15 +947,15 @@ public final class ChunkCursor {
 }
 ```
 
-扫描顺序复刻原插件：
+Scan order reproducing the original plugin:
 
-1. localX 从 0 到 15
-2. localZ 从 0 到 15
-3. 每列从 `heightmap` 最高 Y 往 `minBuildHeight` 扫
+1. `localX` from 0 to 15
+2. `localZ` from 0 to 15
+3. For each column, scan from the heightmap’s highest Y down to `minBuildHeight`
 
-也可以改成 section 扫描，但要保证每 tick 可暂停、下 tick 可继续。
+Section scanning can also be used instead, but it must be pausable per tick and resumable next tick.
 
-每 tick 主循环应同时限制：
+The main loop each tick should simultaneously limit:
 
 ```text
 maxMsPerTick
@@ -964,7 +964,7 @@ blocksPerTick
 blocksPerChunkStep
 ```
 
-推荐逻辑：
+Recommended logic:
 
 ```java
 public TickResult tick(ServerLevel level, MinecraftServer server) {
@@ -1004,11 +1004,11 @@ public TickResult tick(ServerLevel level, MinecraftServer server) {
 }
 ```
 
-## Target matching in NeoForge
+## Target Matching in NeoForge
 
-Bukkit 的 `Material` 更像“大类型”。NeoForge 中建议用 `Block` 匹配，而不是完整 `BlockState` 匹配，否则朝向、含水、年龄等状态会导致“同种方块”匹配失败。
+Bukkit’s `Material` is closer to a broad “type.” In NeoForge, it is recommended to match by `Block`, not by full `BlockState`; otherwise, state properties such as facing direction, waterlogged state, or growth age may cause “same block type” matching to fail.
 
-### 普通方块
+### Normal Blocks
 
 ```java
 public boolean matches(BlockState state) {
@@ -1016,7 +1016,7 @@ public boolean matches(BlockState state) {
 }
 ```
 
-### 破坏所有方块
+### Destroying All Blocks
 
 ```java
 public boolean matches(BlockState state) {
@@ -1024,9 +1024,9 @@ public boolean matches(BlockState state) {
 }
 ```
 
-### 水和 lava
+### Water and Lava
 
-水比较特殊。原 Bukkit 插件用 `Material.WATER`，还处理 waterlogged。NeoForge 可以这样抽象：
+Water is special. The original Bukkit plugin uses `Material.WATER` and also handles waterlogged blocks. NeoForge can abstract this as:
 
 ```java
 public boolean matches(BlockState state) {
@@ -1046,7 +1046,7 @@ public boolean shouldRemoveWaterlogged(BlockState state) {
 }
 ```
 
-处理 waterlogged：
+Handling waterlogged blocks:
 
 ```java
 if (target.shouldRemoveWaterlogged(state)) {
@@ -1057,17 +1057,17 @@ if (target.shouldRemoveWaterlogged(state)) {
 }
 ```
 
-## NeoForge 删除方块策略
+## NeoForge Block Removal Strategy
 
-### 静默删除
+### Silent Removal
 
-对应 Bukkit：
+Equivalent to Bukkit:
 
 ```java
 block.setType(Material.AIR, false);
 ```
 
-NeoForge 推荐：
+Recommended NeoForge version:
 
 ```java
 int flags = Block.UPDATE_CLIENTS
@@ -1077,38 +1077,38 @@ int flags = Block.UPDATE_CLIENTS
 level.setBlock(pos, Blocks.AIR.defaultBlockState(), flags);
 ```
 
-关键点：
+Key points:
 
-- 包含 `UPDATE_CLIENTS`，让客户端看到方块消失。
-- 包含 `UPDATE_SUPPRESS_DROPS`，避免掉落。
-- 不包含 `UPDATE_NEIGHBORS`，避免邻居更新风暴。
-- 可包含 `UPDATE_KNOWN_SHAPE`，减少形状更新递归。
+- Include `UPDATE_CLIENTS` so clients see the block disappear.
+- Include `UPDATE_SUPPRESS_DROPS` to avoid drops.
+- Do not include `UPDATE_NEIGHBORS`, avoiding neighbor update storms.
+- `UPDATE_KNOWN_SHAPE` may be included to reduce recursive shape updates.
 
-不要用：
+Do not use:
 
 ```java
 level.setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
 ```
 
-因为它等价于更强的更新，会触发邻居更新，性能风险更大。
+because it is equivalent to stronger updates and triggers neighbor updates, which is a performance risk.
 
-### 自然破坏并掉落
+### Natural Destruction with Drops
 
-对应 Bukkit：
+Equivalent to Bukkit:
 
 ```java
 block.breakNaturally();
 ```
 
-NeoForge 可用：
+NeoForge can use:
 
 ```java
 level.destroyBlock(pos, true, player);
 ```
 
-具体签名按目标 Minecraft 版本确认。有的版本可能需要更多参数。
+Confirm the exact signature for the target Minecraft version. Some versions may require more parameters.
 
-触发自然掉落前要检查：
+Before triggering natural drops, check:
 
 ```java
 boolean isFluid = state.is(Blocks.WATER)
@@ -1125,7 +1125,7 @@ boolean mayDrop =
  && (maxNaturalBreakBlocks < 0 || naturalBreaks < maxNaturalBreakBlocks);
 ```
 
-如果 `mayDrop`：
+If `mayDrop`:
 
 ```java
 level.destroyBlock(pos, true, player);
@@ -1133,33 +1133,33 @@ naturalBreaks++;
 blocksDestroyed++;
 ```
 
-否则：
+Otherwise:
 
 ```java
 silentRemove(level, pos);
 blocksDestroyed++;
 ```
 
-## 线程规则
+## Threading Rules
 
-必须遵守：
+Must be followed:
 
 - `ServerLevel#getBlockState`
 - `ServerLevel#setBlock`
 - `ServerLevel#destroyBlock`
-- entity 生成
-- 掉落物生成
-- boss bar / player message
+- entity spawning
+- item drop spawning
+- boss bar / player messages
 
-这些都必须在服务端线程执行。
+All of these must execute on the server thread.
 
-允许后台线程做：
+Allowed on background threads:
 
-- 读取 `.mca` header。
-- 构建 chunk key 列表。
-- 排序纯数据。
+- Reading `.mca` headers.
+- Building chunk key lists.
+- Sorting pure data.
 
-后台线程完成后必须回到服务器线程：
+After a background thread finishes, return to the server thread:
 
 ```java
 server.execute(() -> {
@@ -1167,17 +1167,17 @@ server.execute(() -> {
 });
 ```
 
-不要在 `CompletableFuture` 的异步回调里直接修改世界。
+Do not directly modify the world inside asynchronous callbacks from `CompletableFuture`.
 
-## 进度统计
+## Progress Statistics
 
-原插件进度按 chunk 算：
+The original plugin calculates progress by chunk:
 
 ```text
 progress = processedChunks / totalChunks
 ```
 
-NeoForge 如果实现 chunk 内部分步扫描，可以仍按 chunk 算，也可以增加 block 级进度：
+If the NeoForge version implements step-by-step scanning within chunks, progress can still be based on chunks, or block-level progress can be added:
 
 ```java
 public record DestructionStats(
@@ -1200,9 +1200,9 @@ public record DestructionStats(
 }
 ```
 
-## 推荐配置值
+## Recommended Configuration Values
 
-开发测试：
+Development testing:
 
 ```toml
 radius = 64
@@ -1216,7 +1216,7 @@ loadedChunksOnly = true
 allowChunkGeneration = false
 ```
 
-录制或单人服务器：
+Recording or single-player server:
 
 ```toml
 radius = 3000
@@ -1230,7 +1230,7 @@ loadedChunksOnly = false
 allowChunkGeneration = false
 ```
 
-极限复刻原插件：
+Extreme reproduction of the original plugin:
 
 ```toml
 radius = 3000
@@ -1244,11 +1244,11 @@ loadedChunksOnly = false
 allowChunkGeneration = true
 ```
 
-不建议在公共服务器使用极限配置。
+The extreme configuration is not recommended for public servers.
 
-## NeoForge 复刻伪代码总览
+## Overview of NeoForge Reproduction Pseudocode
 
-### 启动任务
+### Starting a Task
 
 ```java
 public boolean start(ServerLevel level, ServerPlayer player, TargetMatcher target, BlockPos center) {
@@ -1273,9 +1273,9 @@ public boolean start(ServerLevel level, ServerPlayer player, TargetMatcher targe
 }
 ```
 
-如果不想异步扫描 region，直接同步构建队列也可以，但半径大时启动瞬间可能卡。
+If you do not want asynchronous region scanning, the queue can also be built synchronously, but a large radius may cause a startup lag spike.
 
-### 每 tick 推进
+### Advancing Each Tick
 
 ```java
 public void tick(MinecraftServer server) {
@@ -1297,7 +1297,7 @@ public void tick(MinecraftServer server) {
 }
 ```
 
-### 处理 chunk
+### Processing a Chunk
 
 ```java
 private boolean advanceToNextChunk(ServerLevel level) {
@@ -1334,7 +1334,7 @@ private boolean advanceToNextChunk(ServerLevel level) {
 }
 ```
 
-### 删除命中方块
+### Removing a Matching Block
 
 ```java
 private void processBlock(ServerLevel level, BlockPos.MutableBlockPos pos, BlockState state, ServerPlayer player) {
@@ -1379,109 +1379,109 @@ private void processBlock(ServerLevel level, BlockPos.MutableBlockPos pos, Block
 }
 ```
 
-## 测试清单
+## Test Checklist
 
-### 基础功能
+### Basic Functionality
 
-- 破坏石头，只删除半径内其他石头。
-- 破坏泥土，只删除半径内其他泥土。
-- `matchBlockType = false` 时删除所有非空气方块。
-- 负坐标下 chunk 范围正确。
-- 下界、末地、自定义维度路径正确。
+- Breaking stone only deletes other stone within the radius.
+- Breaking dirt only deletes other dirt within the radius.
+- When `matchBlockType = false`, all non-air blocks are deleted.
+- Chunk range is correct at negative coordinates.
+- Nether, End, and custom dimension paths are correct.
 
-### 性能
+### Performance
 
-- 半径 64，确认不会卡顿。
-- 半径 512，观察 TPS。
-- 半径 3000，只处理已加载 chunk。
-- 半径 3000，处理已生成但未加载 chunk。
-- 大量未生成 chunk 时确认不会同步生成造成长卡顿。
+- Radius 64: confirm there is no lag.
+- Radius 512: observe TPS.
+- Radius 3000: only process loaded chunks.
+- Radius 3000: process generated but unloaded chunks.
+- When many chunks are ungenerated, confirm that no long lag spike is caused by synchronous generation.
 
-### 掉落
+### Drops
 
-- 掉落半径内自然掉落。
-- 掉落半径外不掉落。
-- `maxNaturalBreakBlocks = 0` 时不掉落。
-- `maxNaturalBreakBlocks = -1` 时不限自然破坏次数。
-- 流体不掉落。
+- Natural drops occur inside the drop radius.
+- No drops occur outside the drop radius.
+- `maxNaturalBreakBlocks = 0` means no drops.
+- `maxNaturalBreakBlocks = -1` means unlimited natural break count.
+- Fluids do not drop items.
 
-### 物理更新
+### Physics Updates
 
-- 删除沙子时不应导致大规模下落风暴。
-- 删除红石旁边方块时不应产生大规模邻居更新。
-- 删除水或岩浆时不应触发巨量流体更新。
+- Removing sand should not cause a massive falling-block storm.
+- Removing blocks next to redstone should not cause massive neighbor updates.
+- Removing water or lava should not trigger huge fluid updates.
 
-### 水和含水方块
+### Water and Waterlogged Blocks
 
-- 破坏水时删除水方块。
-- 破坏水时移除含水楼梯/台阶中的 waterlogged 状态。
-- 不应删除含水方块本体。
+- Breaking water deletes water blocks.
+- Breaking water removes the `waterlogged` state from waterlogged stairs/slabs.
+- The waterlogged block itself should not be deleted.
 
-### 并发与取消
+### Concurrency and Cancellation
 
-- 同一世界多个任务是否允许由配置控制。
-- `/stop` 或等价命令能取消任务。
-- 服务器关闭时取消所有任务。
-- 玩家离线时任务仍能继续或按配置停止。
+- Whether multiple tasks in the same world are allowed should be controlled by configuration.
+- `/stop` or an equivalent command can cancel tasks.
+- All tasks are cancelled when the server shuts down.
+- When the player goes offline, the task should either continue or stop according to configuration.
 
-## 给 AI 的实现提示词
+## Implementation Prompt for AI
 
-如果要让另一个 AI 在 NeoForge 中实现，可直接给它下面这段要求。
-
-```text
-请在 NeoForge 上实现一个服务端 mod：玩家破坏一个方块后，在指定半径内分批破坏所有同种方块。行为参考 Bukkit 插件 CarvsBlockBreak，但不要逐字照搬 Bukkit API。
-
-必须实现：
-1. 监听服务端 BlockEvent.BreakEvent，读取被破坏前的 BlockState 和 BlockPos。
-2. 默认按 Block 类型匹配同种方块，不按完整 BlockState 匹配。
-3. 以触发点为中心，将 radius 转成 chunk 范围，使用 floor chunk 坐标换算，不能用普通 /16。
-4. 生成 chunk 队列，优先处理离触发点近的 chunk。
-5. 可选：扫描 region/*.mca header，将磁盘上存在的 chunk 排在前面。
-6. 每 server tick 推进任务，使用 System.nanoTime 做 maxMsPerTick 预算。
-7. 同时限制 chunksPerTick、blocksPerTick、blocksPerChunkStep。
-8. 不允许在后台线程调用 ServerLevel#setBlock、destroyBlock、getBlockState 等世界修改或读取逻辑；所有世界访问都在服务端线程。
-9. 可以后台线程读取 .mca header 和排序纯数据，完成后用 server.execute 回到服务器线程。
-10. 静默删除使用 Level#setBlock(pos, Blocks.AIR.defaultBlockState(), flags)，flags 包含 UPDATE_CLIENTS、UPDATE_SUPPRESS_DROPS、UPDATE_KNOWN_SHAPE，不包含 UPDATE_NEIGHBORS。
-11. 掉落半径内使用 level.destroyBlock(pos, true, player) 或目标版本等价 API；掉落半径外静默删除。
-12. maxNaturalBreakBlocks 限制自然破坏次数，不是精确 item entity 数。
-13. 水、岩浆、气泡柱作为流体直接静默删除。
-14. 如果目标是水，含 WATERLOGGED 属性且为 true 的方块应改成 WATERLOGGED=false，而不是删除方块本体。
-15. 支持 loadedChunksOnly 和 allowChunkGeneration 两个独立配置。默认不要生成新区块。
-16. 提供任务进度、取消、服务器关闭清理。
-
-不要做：
-1. 不要在一次事件里扫描完整世界或完整大半径。
-2. 不要用 setBlockAndUpdate 删除大量方块。
-3. 不要包含 UPDATE_NEIGHBORS 作为静默删除 flag。
-4. 不要从 CompletableFuture 后台线程修改世界。
-5. 不要默认生成大量未生成 chunk。
-```
-
-## 和原 Bukkit 插件的关键差异建议
-
-NeoForge 复刻时建议保留原插件核心性能思想，但做这些改进：
-
-1. 真正实现 `blocks-per-chunk-tick`。
-2. 默认不生成新区块。
-3. chunk 未加载时优先延后，而不是同步卡主线程。
-4. region header 扫描尽量放后台线程。
-5. 权限、冷却、确认逻辑明确实现。
-6. `maxDrops` 改名为 `maxNaturalBreakBlocks`，避免语义误导。
-7. 对公共服务器提供更保守的默认值。
-
-## 最重要的复刻原则
-
-这个插件高效的本质不是某个单独 API，而是这些原则：
+If you want another AI to implement this in NeoForge, you can directly give it the following requirements.
 
 ```text
-少量多次
-+ 主线程限时
-+ chunk 队列
-+ 命中前轻量读取
-+ 命中后才真实修改
-+ 远处不掉落
-+ 静默删除不触发邻居更新
-+ chunk 加载不要阻塞主线程太久
+Please implement a server-side mod on NeoForge: after a player breaks one block, batch-break all blocks of the same type within a specified radius. The behavior should reference the Bukkit plugin CarvsBlockBreak, but do not copy Bukkit APIs literally.
+
+Must implement:
+1. Listen to server-side BlockEvent.BreakEvent and read the BlockState and BlockPos before the block is broken.
+2. By default, match the same block by Block type, not by full BlockState.
+3. Use the trigger point as the center, convert radius into a chunk range, and use floor chunk coordinate conversion. Do not use normal /16.
+4. Generate a chunk queue and prioritize chunks closer to the trigger point.
+5. Optional: scan region/*.mca headers and place chunks that exist on disk earlier in the queue.
+6. Advance tasks every server tick and use System.nanoTime as the maxMsPerTick budget.
+7. Simultaneously limit chunksPerTick, blocksPerTick, and blocksPerChunkStep.
+8. Do not call ServerLevel#setBlock, destroyBlock, getBlockState, or other world modification/read logic from a background thread. All world access must happen on the server thread.
+9. It is allowed to read .mca headers and sort pure data on a background thread; after completion, return to the server thread using server.execute.
+10. Silent removal should use Level#setBlock(pos, Blocks.AIR.defaultBlockState(), flags), where flags include UPDATE_CLIENTS, UPDATE_SUPPRESS_DROPS, and UPDATE_KNOWN_SHAPE, but not UPDATE_NEIGHBORS.
+11. Inside the drop radius, use level.destroyBlock(pos, true, player) or the equivalent API for the target version; outside the drop radius, silently remove blocks.
+12. maxNaturalBreakBlocks limits the number of natural block breaks, not the exact number of item entities.
+13. Water, lava, and bubble columns should be treated as fluids and silently removed directly.
+14. If the target is water, blocks with the WATERLOGGED property set to true should be changed to WATERLOGGED=false instead of deleting the block itself.
+15. Support two separate config options: loadedChunksOnly and allowChunkGeneration. Do not generate new chunks by default.
+16. Provide task progress, cancellation, and cleanup on server shutdown.
+
+Do not:
+1. Do not scan the entire world or the entire large radius inside a single event.
+2. Do not use setBlockAndUpdate to remove large amounts of blocks.
+3. Do not include UPDATE_NEIGHBORS as a silent removal flag.
+4. Do not modify the world from a CompletableFuture background thread.
+5. Do not generate large amounts of ungenerated chunks by default.
 ```
 
-NeoForge 实现只要守住这些原则，即使具体 API 和 Bukkit 不同，也能复刻出相同的性能特征。
+## Recommended Key Differences from the Original Bukkit Plugin
+
+When reproducing this in NeoForge, preserve the original plugin’s core performance ideas, but make these improvements:
+
+1. Actually implement `blocks-per-chunk-tick`.
+2. Do not generate new chunks by default.
+3. When chunks are not loaded, defer them instead of synchronously blocking the main thread.
+4. Move region header scanning to a background thread where possible.
+5. Explicitly implement permission, cooldown, and confirmation logic.
+6. Rename `maxDrops` to `maxNaturalBreakBlocks` to avoid misleading semantics.
+7. Provide more conservative default values for public servers.
+
+## Most Important Reproduction Principles
+
+The efficiency of this plugin does not come from one specific API, but from these principles:
+
+```text
+small batches over many ticks
++ main-thread time limit
++ chunk queue
++ lightweight reads before matches
++ real modification only after a match
++ no drops for distant blocks
++ silent removal without neighbor updates
++ chunk loading should not block the main thread for too long
+```
+
+As long as a NeoForge implementation follows these principles, it can reproduce the same performance characteristics even if the concrete APIs differ from Bukkit.
