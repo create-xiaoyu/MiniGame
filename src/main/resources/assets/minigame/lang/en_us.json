@@ -9,5 +9,24 @@
   "minigame.configuration.items": "Item List",
   "minigame.configuration.logDirtBlock": "Log Dirt Block",
   "minigame.configuration.magicNumberIntroduction": "Magic Number Text",
-  "minigame.configuration.magicNumber": "Magic Number"
+  "minigame.configuration.magicNumber": "Magic Number",
+
+  "minigame.sameblockbreak.actor.unknown": "unknown source",
+  "minigame.sameblockbreak.broadcast.trigger": "%s broke %s",
+  "minigame.sameblockbreak.target.all_non_air": "all non-air blocks",
+  "minigame.sameblockbreak.task.already_active": "SameBlockBreak: a destruction task is already active in this dimension.",
+  "minigame.sameblockbreak.task.already_preparing": "SameBlockBreak: a destruction task is already preparing in this dimension.",
+  "minigame.sameblockbreak.task.preparing": "SameBlockBreak: preparing queue for %s...",
+  "minigame.sameblockbreak.task.prepare_failed": "SameBlockBreak: failed to prepare destruction queue.",
+  "minigame.sameblockbreak.task.no_chunks": "SameBlockBreak: no chunks to process.",
+  "minigame.sameblockbreak.task.active_before_ready": "SameBlockBreak: a destruction task became active before this queue was ready.",
+  "minigame.sameblockbreak.task.started": "SameBlockBreak: started %s task over %s chunks.",
+  "minigame.sameblockbreak.task.completed": "SameBlockBreak: completed %s, destroyed %s blocks, scanned %s positions, natural breaks %s, skipped chunks %s, elapsed %s ms.",
+  "minigame.sameblockbreak.task.cancelled": "SameBlockBreak: cancelled %s, destroyed %s blocks, scanned %s positions, natural breaks %s, skipped chunks %s, elapsed %s ms.",
+  "minigame.sameblockbreak.status.no_active": "SameBlockBreak: no active task in %s.",
+  "minigame.sameblockbreak.status.prefix": "SameBlockBreak: ",
+  "minigame.sameblockbreak.status.preparing": "preparing queue",
+  "minigame.sameblockbreak.status.task": "%s %s%% chunks=%s/%s destroyed=%s scanned=%s skipped=%s",
+  "minigame.sameblockbreak.command.cancel.dimension": "SameBlockBreak: cancelled %s task(s) in this dimension.",
+  "minigame.sameblockbreak.command.cancel.all": "SameBlockBreak: cancelled %s task(s)."
 }

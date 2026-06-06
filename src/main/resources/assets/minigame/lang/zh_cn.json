@@ -1,0 +1,32 @@
+{
+  "itemGroup.minigame": "MiniGame 示例标签页",
+  "block.minigame.example_block": "示例方块",
+  "item.minigame.example_item": "示例物品",
+
+  "minigame.configuration.title": "MiniGame 配置",
+  "minigame.configuration.section.minigame.common.toml": "MiniGame 配置",
+  "minigame.configuration.section.minigame.common.toml.title": "MiniGame 配置",
+  "minigame.configuration.items": "物品列表",
+  "minigame.configuration.logDirtBlock": "记录泥土方块",
+  "minigame.configuration.magicNumberIntroduction": "魔法数字文本",
+  "minigame.configuration.magicNumber": "魔法数字",
+
+  "minigame.sameblockbreak.actor.unknown": "未知来源",
+  "minigame.sameblockbreak.broadcast.trigger": "%s 破坏了 %s",
+  "minigame.sameblockbreak.target.all_non_air": "所有非空气方块",
+  "minigame.sameblockbreak.task.already_active": "SameBlockBreak：该维度已经有一个破坏任务正在运行。",
+  "minigame.sameblockbreak.task.already_preparing": "SameBlockBreak：该维度已经有一个破坏任务正在准备队列。",
+  "minigame.sameblockbreak.task.preparing": "SameBlockBreak：正在为 %s 准备区块队列...",
+  "minigame.sameblockbreak.task.prepare_failed": "SameBlockBreak：准备破坏队列失败。",
+  "minigame.sameblockbreak.task.no_chunks": "SameBlockBreak：没有需要处理的区块。",
+  "minigame.sameblockbreak.task.active_before_ready": "SameBlockBreak：队列准备完成前，该维度已经启动了其他破坏任务。",
+  "minigame.sameblockbreak.task.started": "SameBlockBreak：已启动 %s 任务，共 %s 个区块。",
+  "minigame.sameblockbreak.task.completed": "SameBlockBreak：已完成 %s，破坏 %s 个方块，扫描 %s 个位置，自然破坏 %s 次，跳过 %s 个区块，用时 %s 毫秒。",
+  "minigame.sameblockbreak.task.cancelled": "SameBlockBreak：已取消 %s，破坏 %s 个方块，扫描 %s 个位置，自然破坏 %s 次，跳过 %s 个区块，用时 %s 毫秒。",
+  "minigame.sameblockbreak.status.no_active": "SameBlockBreak：%s 中没有正在运行的任务。",
+  "minigame.sameblockbreak.status.prefix": "SameBlockBreak：",
+  "minigame.sameblockbreak.status.preparing": "正在准备队列",
+  "minigame.sameblockbreak.status.task": "%s %s%% 区块=%s/%s 破坏=%s 扫描=%s 跳过=%s",
+  "minigame.sameblockbreak.command.cancel.dimension": "SameBlockBreak：已取消该维度中的 %s 个任务。",
+  "minigame.sameblockbreak.command.cancel.all": "SameBlockBreak：已取消 %s 个任务。"
+}
