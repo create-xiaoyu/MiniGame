@@ -28,5 +28,9 @@
   "minigame.sameblockbreak.status.preparing": "preparing queue",
   "minigame.sameblockbreak.status.task": "%s %s%% chunks=%s/%s destroyed=%s scanned=%s skipped=%s",
   "minigame.sameblockbreak.command.cancel.dimension": "SameBlockBreak: cancelled %s task(s) in this dimension.",
-  "minigame.sameblockbreak.command.cancel.all": "SameBlockBreak: cancelled %s task(s)."
+  "minigame.sameblockbreak.command.cancel.all": "SameBlockBreak: cancelled %s task(s).",
+  "minigame.sameblockbreak.command.enable.enable": "SameBlockBreak is already enabled",
+  "minigame.sameblockbreak.command.enable": "SameBlockBreak is enable",
+  "minigame.sameblockbreak.command.disable.disable": "SameBlockBreak is already disable",
+  "minigame.sameblockbreak.command.disable": "SameBlockBreak is disable"
 }

@@ -1,6 +1,7 @@
 package com.xiaoyu.minigame.sameblockbreak.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.xiaoyu.minigame.sameblockbreak.config.SameBlockBreakConfig;
 import com.xiaoyu.minigame.sameblockbreak.destruction.DestructionManager;
 
 import net.minecraft.commands.CommandSourceStack;
@@ -23,7 +24,11 @@ public final class SameBlockBreakCommands {
                                 .then(Commands.literal("cancel")
                                         .executes(context -> cancelDimension(context.getSource())))
                                 .then(Commands.literal("cancelall")
-                                        .executes(context -> cancelAll(context.getSource()))))
+                                        .executes(context -> cancelAll(context.getSource())))
+                                .then(Commands.literal("enable")
+                                        .executes(context -> enable(context.getSource())))
+                                .then(Commands.literal("disable")
+                                        .executes(context -> disable(context.getSource()))))
         );
     }
 
@@ -43,5 +48,29 @@ public final class SameBlockBreakCommands {
         int cancelled = DestructionManager.INSTANCE.cancelAll();
         source.sendSuccess(() -> Component.translatable("minigame.sameblockbreak.command.cancel.all", cancelled), true);
         return cancelled;
+    }
+
+    private static int enable(CommandSourceStack source) {
+        if (SameBlockBreakConfig.ENABLED.getAsBoolean()) {
+            source.sendSystemMessage(Component.translatable("minigame.sameblockbreak.command.enable.enable"));
+            return 1;
+        }
+
+        SameBlockBreakConfig.ENABLED.set(true);
+        SameBlockBreakConfig.SPEC.save();
+        source.sendSystemMessage(Component.translatable("minigame.sameblockbreak.command.enable"));
+        return 1;
+    }
+
+    private static int disable(CommandSourceStack source) {
+        if (!SameBlockBreakConfig.ENABLED.getAsBoolean()) {
+            source.sendSystemMessage(Component.translatable("minigame.sameblockbreak.command.disable.disable"));
+            return 1;
+        }
+
+        SameBlockBreakConfig.ENABLED.set(false);
+        SameBlockBreakConfig.SPEC.save();
+        source.sendSystemMessage(Component.translatable("minigame.sameblockbreak.command.disable"));
+        return 1;
     }
 }
