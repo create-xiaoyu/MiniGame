@@ -1,9 +1,11 @@
 package com.xiaoyu.minigame.sameblockbreak.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.xiaoyu.minigame.MiniGame;
 import com.xiaoyu.minigame.sameblockbreak.config.SameBlockBreakConfig;
 import com.xiaoyu.minigame.sameblockbreak.destruction.DestructionManager;
 
+import com.xiaoyu.minigame.sameblockbreak.world.ForbiddenBlocks;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -68,6 +70,8 @@ public final class SameBlockBreakCommands {
             return 1;
         }
 
+        ForbiddenBlocks.clearActiveCache();
+        DestructionManager.INSTANCE.cancelAll();
         SameBlockBreakConfig.ENABLED.set(false);
         SameBlockBreakConfig.SPEC.save();
         source.sendSystemMessage(Component.translatable("minigame.sameblockbreak.command.disable"));
