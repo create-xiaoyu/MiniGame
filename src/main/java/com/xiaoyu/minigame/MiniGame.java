@@ -3,6 +3,7 @@ package com.xiaoyu.minigame;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
+import com.xiaoyu.minigame.chunkplaceblock.ChunkPlaceBlockFeature;
 import com.xiaoyu.minigame.sameblockbreak.SameBlockBreakFeature;
 
 import net.neoforged.fml.ModContainer;
@@ -15,5 +16,6 @@ public class MiniGame {
 
     public MiniGame(ModContainer modContainer) {
         SameBlockBreakFeature.register(modContainer);
+        ChunkPlaceBlockFeature.register(modContainer);
     }
 }

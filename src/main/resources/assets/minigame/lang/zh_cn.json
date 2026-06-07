@@ -29,8 +29,8 @@
   "minigame.sameblockbreak.status.task": "%s %s%% 区块=%s/%s 破坏=%s 扫描=%s 跳过=%s",
   "minigame.sameblockbreak.command.cancel.dimension": "SameBlockBreak：已取消该维度中的 %s 个任务。",
   "minigame.sameblockbreak.command.cancel.all": "SameBlockBreak：已取消 %s 个任务。",
-  "minigame.sameblockbreak.command.enable.enable": "SameBlockBreak 已处于启用状态",
-  "minigame.sameblockbreak.command.enable": "SameBlockBreak 已启用",
-  "minigame.sameblockbreak.command.disable.disable": "SameBlockBreak 已处于禁用状态",
-  "minigame.sameblockbreak.command.disable": "SameBlockBreak 已禁用"
+  "minigame.command.enable.enable": "%s 已处于启用状态",
+  "minigame.command.enable": "%s 已启用",
+  "minigame.command.disable.disable": "%s 已处于禁用状态",
+  "minigame.command.disable": "%s 已禁用"
 }

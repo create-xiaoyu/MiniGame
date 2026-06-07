@@ -1,4 +1,4 @@
-package com.xiaoyu.minigame.sameblockbreak.mixin;
+package com.xiaoyu.minigame.mixin.sameblockbreak;
 
 import com.xiaoyu.minigame.sameblockbreak.world.ForbiddenBlocks;
 

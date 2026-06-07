@@ -1,17 +1,17 @@
-package com.xiaoyu.minigame.sameblockbreak.mixin;
+package com.xiaoyu.minigame.mixin.sameblockbreak;
 
 import com.xiaoyu.minigame.sameblockbreak.world.ForbiddenBlocks;
 
-import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
-@Mixin(Level.class)
-public abstract class LevelMixin {
+@Mixin(LevelChunk.class)
+public abstract class LevelChunkMixin {
     @ModifyVariable(
-            method = "setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)Z",
+            method = "setBlockState(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Lnet/minecraft/world/level/block/state/BlockState;",
             at = @At("HEAD"),
             argsOnly = true,
             ordinal = 0

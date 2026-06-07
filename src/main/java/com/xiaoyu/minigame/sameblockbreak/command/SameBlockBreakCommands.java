@@ -54,19 +54,19 @@ public final class SameBlockBreakCommands {
 
     private static int enable(CommandSourceStack source) {
         if (SameBlockBreakConfig.ENABLED.getAsBoolean()) {
-            source.sendSystemMessage(Component.translatable("minigame.sameblockbreak.command.enable.enable"));
+            source.sendSystemMessage(Component.translatable("minigame.command.enable.enable", "SameBlockBreak"));
             return 1;
         }
 
         SameBlockBreakConfig.ENABLED.set(true);
         SameBlockBreakConfig.SPEC.save();
-        source.sendSystemMessage(Component.translatable("minigame.sameblockbreak.command.enable"));
+        source.sendSystemMessage(Component.translatable("minigame.command.enable", "SameBlockBreak"));
         return 1;
     }
 
     private static int disable(CommandSourceStack source) {
         if (!SameBlockBreakConfig.ENABLED.getAsBoolean()) {
-            source.sendSystemMessage(Component.translatable("minigame.sameblockbreak.command.disable.disable"));
+            source.sendSystemMessage(Component.translatable("minigame.command.disable.disable", "SameBlockBreak"));
             return 1;
         }
 
@@ -74,7 +74,7 @@ public final class SameBlockBreakCommands {
         DestructionManager.INSTANCE.cancelAll();
         SameBlockBreakConfig.ENABLED.set(false);
         SameBlockBreakConfig.SPEC.save();
-        source.sendSystemMessage(Component.translatable("minigame.sameblockbreak.command.disable"));
+        source.sendSystemMessage(Component.translatable("minigame.command.disable", "SameBlockBreak"));
         return 1;
     }
 }
