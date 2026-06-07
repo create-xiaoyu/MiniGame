@@ -48,7 +48,7 @@ public final class SameBlockBreakFeature {
     }
 
     public static void register(ModContainer modContainer) {
-        modContainer.registerConfig(ModConfig.Type.SERVER, SameBlockBreakConfig.SPEC);
+        modContainer.registerConfig(ModConfig.Type.SERVER, SameBlockBreakConfig.SPEC, "minigame/sameblockbreak.toml");
 
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, BreakBlockEvent.class, SameBlockBreakFeature::onBreakBlock);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, ExplosionEvent.Detonate.class, SameBlockBreakFeature::onExplosionDetonate);

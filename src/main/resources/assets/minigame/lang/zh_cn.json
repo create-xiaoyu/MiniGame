@@ -32,5 +32,5 @@
   "minigame.sameblockbreak.command.enable.enable": "SameBlockBreak 已处于启用状态",
   "minigame.sameblockbreak.command.enable": "SameBlockBreak 已启用",
   "minigame.sameblockbreak.command.disable.disable": "SameBlockBreak 已处于禁用状态",
-  "minigame.sameblockbreak.command.disable": ""
+  "minigame.sameblockbreak.command.disable": "SameBlockBreak 已禁用"
 }
