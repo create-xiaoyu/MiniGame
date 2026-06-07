@@ -7,8 +7,12 @@ import com.xiaoyu.minigame.chunkplaceblock.command.ChunkPlaceBlockCommands;
 import com.xiaoyu.minigame.chunkplaceblock.config.ChunkPlaceBlockConfig;
 import com.xiaoyu.minigame.chunkplaceblock.placement.ChunkPlaceBlockManager;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.config.ModConfig;
@@ -23,6 +27,19 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 public final class ChunkPlaceBlockFeature {
     private ChunkPlaceBlockFeature() {
+    }
+
+    public static void broadcastPlacement(ServerLevel level, Entity entity, BlockState placedBlock) {
+        if (!ChunkPlaceBlockConfig.ENABLED.getAsBoolean()) {
+            return;
+        }
+
+        Component message = Component.translatable("minigame.chunkplaceblock.broadcast.trigger",
+                entity.getDisplayName(),
+                placedBlock.getBlock().getName()
+                ).withStyle(ChatFormatting.RED);
+
+        level.getServer().getPlayerList().broadcastSystemMessage(message, false);
     }
 
     public static void register(ModContainer modContainer) {
@@ -50,6 +67,7 @@ public final class ChunkPlaceBlockFeature {
             return;
         }
 
+        broadcastPlacement(level, event.getEntity(), event.getPlacedBlock());
         ChunkPlaceBlockManager.INSTANCE.schedulePlacement(level, List.of(event.getPos()));
     }
 
@@ -65,6 +83,7 @@ public final class ChunkPlaceBlockFeature {
         List<BlockPos> positions = event.getReplacedBlockSnapshots().stream()
                 .map(BlockSnapshot::getPos)
                 .toList();
+        broadcastPlacement(level, event.getEntity(), event.getPlacedBlock());
         ChunkPlaceBlockManager.INSTANCE.schedulePlacement(level, positions);
     }
 

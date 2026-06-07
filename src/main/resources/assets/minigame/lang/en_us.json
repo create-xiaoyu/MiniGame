@@ -29,6 +29,7 @@
   "minigame.sameblockbreak.status.task": "%s %s%% chunks=%s/%s destroyed=%s scanned=%s skipped=%s",
   "minigame.sameblockbreak.command.cancel.dimension": "SameBlockBreak: cancelled %s task(s) in this dimension.",
   "minigame.sameblockbreak.command.cancel.all": "SameBlockBreak: cancelled %s task(s).",
+  "minigame.chunkplaceblock.broadcast.trigger": "%s place %s",
   "minigame.command.enable.enable": "%s is already enabled",
   "minigame.command.enable": "%s is enable",
   "minigame.command.disable.disable": "%s is already disable",

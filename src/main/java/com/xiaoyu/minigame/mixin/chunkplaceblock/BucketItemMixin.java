@@ -2,6 +2,7 @@ package com.xiaoyu.minigame.mixin.chunkplaceblock;
 
 import java.util.List;
 
+import com.xiaoyu.minigame.chunkplaceblock.ChunkPlaceBlockFeature;
 import com.xiaoyu.minigame.chunkplaceblock.placement.ChunkPlaceBlockManager;
 
 import net.minecraft.core.BlockPos;
@@ -49,11 +50,12 @@ public abstract class BucketItemMixin {
         }
 
         Block placedFluidBlock = content.defaultFluidState().createLegacyBlock().getBlock();
-        if (serverLevel.getBlockState(pos).getBlock() != placedFluidBlock
-                || !serverLevel.getFluidState(pos).isSourceOfType(content)) {
+        var placedBlock = serverLevel.getBlockState(pos);
+        if (placedBlock.getBlock() != placedFluidBlock || !serverLevel.getFluidState(pos).isSourceOfType(content)) {
             return;
         }
 
+        ChunkPlaceBlockFeature.broadcastPlacement(serverLevel, user, placedBlock);
         ChunkPlaceBlockManager.INSTANCE.schedulePlacement(serverLevel, List.of(pos.immutable()));
     }
 }
