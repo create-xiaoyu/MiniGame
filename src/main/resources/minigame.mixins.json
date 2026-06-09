@@ -3,15 +3,6 @@
   "package": "com.xiaoyu.minigame.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
-    "chunkplaceblock.BlockEntityMixin",
-    "chunkplaceblock.BucketItemMixin",
-    "sameblockbreak.BlockItemMixin",
-    "sameblockbreak.BucketItemMixin",
-    "sameblockbreak.LevelChunkMixin",
-    "sameblockbreak.LevelMixin",
-    "sameblockbreak.NoiseBasedChunkGeneratorMixin",
-    "sameblockbreak.ProtoChunkMixin",
-    "sameblockbreak.WorldGenRegionMixin"
   ],
   "injectors": {
     "defaultRequire": 1
