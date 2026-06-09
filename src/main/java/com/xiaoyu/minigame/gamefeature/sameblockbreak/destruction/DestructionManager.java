@@ -87,14 +87,31 @@ public final class DestructionManager {
         TargetMatcher target = TargetMatcher.from(triggerState, settings.matchBlockType());
         rememberForbiddenBlock(server, triggerState, settings);
         BlockPos immutableCenter = center.immutable();
+        BlockPos priorityCenter = actor == null ? immutableCenter : actor.blockPosition().immutable();
         UUID breakerId = actor == null ? null : actor.getUUID();
         Component actorName = actorDisplayName(actor);
         Component brokenBlockName = triggerState.getBlock().getName();
 
         broadcastTrigger(server, actorName, brokenBlockName);
         sendAdminMessage(server, Component.translatable("minigame.sameblockbreak.task.preparing", target.displayName()));
+        if (settings.loadedChunksOnly()) {
+            long[] queue = ChunkQueueBuilder.buildLoaded(level, immutableCenter, settings.radius(), priorityCenter);
+            attachPreparedTask(
+                    server,
+                    dimension,
+                    breakerId,
+                    target,
+                    immutableCenter,
+                    settings,
+                    preparationId,
+                    queue,
+                    null
+            );
+            return true;
+        }
+
         CompletableFuture
-                .supplyAsync(() -> ChunkQueueBuilder.build(immutableCenter, settings.radius()))
+                .supplyAsync(() -> ChunkQueueBuilder.build(immutableCenter, settings.radius(), priorityCenter))
                 .whenComplete((queue, throwable) -> server.execute(() -> attachPreparedTask(
                         server,
                         dimension,

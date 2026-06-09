@@ -8,11 +8,13 @@ import com.xiaoyu.minigame.gamefeature.common.world.ChunkLoading;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.SectionPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
@@ -94,7 +96,7 @@ public final class DestructionTask {
                     return true;
                 }
 
-                long chunkKey = chunkQueue[chunkIndex++];
+                long chunkKey = selectNextChunk(level);
                 chunksThisTick++;
                 currentChunk = getChunk(level, ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey));
                 if (currentChunk == null) {
@@ -278,6 +280,10 @@ public final class DestructionTask {
             processed++;
             blocksScanned++;
 
+            if (settings.loadedChunksOnly() && !isChunkLoaded(level, pos)) {
+                continue;
+            }
+
             BlockState state = level.getBlockState(pos);
             if (state.isAir() || state.canSurvive(level, pos)) {
                 continue;
@@ -286,6 +292,67 @@ public final class DestructionTask {
             destroyUnsupportedBlock(level, server, pos, state);
         }
         return processed;
+    }
+
+    private long selectNextChunk(ServerLevel level) {
+        long[] priorityChunks = priorityChunks(level);
+        if (priorityChunks.length == 0) {
+            return chunkQueue[chunkIndex++];
+        }
+
+        int bestIndex = chunkIndex;
+        long bestScore = priorityScore(chunkQueue[bestIndex], priorityChunks);
+        int limit = Math.min(chunkQueue.length, chunkIndex + settings.dynamicPriorityScanLimit());
+        for (int i = chunkIndex + 1; i < limit; i++) {
+            long score = priorityScore(chunkQueue[i], priorityChunks);
+            if (score < bestScore) {
+                bestScore = score;
+                bestIndex = i;
+            }
+        }
+
+        long selected = chunkQueue[bestIndex];
+        chunkQueue[bestIndex] = chunkQueue[chunkIndex];
+        chunkQueue[chunkIndex] = selected;
+        chunkIndex++;
+        return selected;
+    }
+
+    private long[] priorityChunks(ServerLevel level) {
+        long[] chunks = new long[level.players().size()];
+        int count = 0;
+        for (ServerPlayer player : level.players()) {
+            if (!player.isSpectator()) {
+                chunks[count++] = player.chunkPosition().pack();
+            }
+        }
+
+        if (count == 0) {
+            return new long[]{ChunkPos.containing(center).pack()};
+        }
+
+        if (count == chunks.length) {
+            return chunks;
+        }
+
+        long[] trimmed = new long[count];
+        System.arraycopy(chunks, 0, trimmed, 0, count);
+        return trimmed;
+    }
+
+    private long priorityScore(long chunkKey, long[] priorityChunks) {
+        long best = Long.MAX_VALUE;
+        int chunkX = ChunkPos.getX(chunkKey);
+        int chunkZ = ChunkPos.getZ(chunkKey);
+        for (long priorityChunk : priorityChunks) {
+            long dx = (long) chunkX - ChunkPos.getX(priorityChunk);
+            long dz = (long) chunkZ - ChunkPos.getZ(priorityChunk);
+            long distanceSquared = dx * dx + dz * dz;
+            if (distanceSquared < best) {
+                best = distanceSquared;
+            }
+        }
+        return best;
     }
 
     private void destroyUnsupportedBlock(ServerLevel level, MinecraftServer server, BlockPos pos, BlockState state) {
@@ -333,6 +400,13 @@ public final class DestructionTask {
                 settings.loadedChunksOnly(),
                 settings.allowChunkGeneration()
         );
+    }
+
+    private boolean isChunkLoaded(ServerLevel level, BlockPos pos) {
+        return level.getChunkSource().getChunkNow(
+                SectionPos.blockToSectionCoord(pos.getX()),
+                SectionPos.blockToSectionCoord(pos.getZ())
+        ) != null;
     }
 
     private boolean isTriggerPos(BlockPos pos) {

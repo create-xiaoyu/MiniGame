@@ -16,6 +16,7 @@ public final class SameBlockBreakConfig {
     public static final ModConfigSpec.IntValue MAX_MS_PER_TICK;
     public static final ModConfigSpec.IntValue BLOCKS_PER_TICK;
     public static final ModConfigSpec.IntValue BLOCKS_PER_CHUNK_STEP;
+    public static final ModConfigSpec.IntValue DYNAMIC_PRIORITY_SCAN_LIMIT;
     public static final ModConfigSpec.BooleanValue LOADED_CHUNKS_ONLY;
     public static final ModConfigSpec.BooleanValue ALLOW_CHUNK_GENERATION;
     public static final ModConfigSpec.BooleanValue ALLOW_CONCURRENT_TASKS;
@@ -65,9 +66,12 @@ public final class SameBlockBreakConfig {
         BLOCKS_PER_CHUNK_STEP = builder
                 .comment("Maximum block positions scanned from one chunk before yielding.")
                 .defineInRange("blocksPerChunkStep", 3000, 1, 1_000_000);
+        DYNAMIC_PRIORITY_SCAN_LIMIT = builder
+                .comment("How many remaining chunk entries are re-ranked against current player positions whenever the task picks the next chunk.")
+                .defineInRange("dynamicPriorityScanLimit", 4096, 1, 100_000);
         LOADED_CHUNKS_ONLY = builder
-                .comment("When true, only already loaded chunks are scanned. When false, saved chunks are loaded without generating missing chunks unless allowChunkGeneration is true.")
-                .define("loadedChunksOnly", false);
+                .comment("When true, immediate tasks only scan already loaded chunks. Remembered forbidden blocks are still cleaned later when chunks load.")
+                .define("loadedChunksOnly", true);
         ALLOW_CHUNK_GENERATION = builder
                 .comment("When true, missing chunks may be synchronously loaded or generated. Keep false for large radii.")
                 .define("allowChunkGeneration", false);

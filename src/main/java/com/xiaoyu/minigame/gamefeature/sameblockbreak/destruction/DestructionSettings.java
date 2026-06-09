@@ -14,6 +14,7 @@ public record DestructionSettings(
         int maxMsPerTick,
         int blocksPerTick,
         int blocksPerChunkStep,
+        int dynamicPriorityScanLimit,
         boolean loadedChunksOnly,
         boolean allowChunkGeneration,
         boolean allowConcurrentTasks
@@ -31,6 +32,7 @@ public record DestructionSettings(
                 SameBlockBreakConfig.MAX_MS_PER_TICK.getAsInt(),
                 SameBlockBreakConfig.BLOCKS_PER_TICK.getAsInt(),
                 SameBlockBreakConfig.BLOCKS_PER_CHUNK_STEP.getAsInt(),
+                SameBlockBreakConfig.DYNAMIC_PRIORITY_SCAN_LIMIT.getAsInt(),
                 SameBlockBreakConfig.LOADED_CHUNKS_ONLY.getAsBoolean(),
                 SameBlockBreakConfig.ALLOW_CHUNK_GENERATION.getAsBoolean(),
                 SameBlockBreakConfig.ALLOW_CONCURRENT_TASKS.getAsBoolean()
