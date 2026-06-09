@@ -15,6 +15,7 @@ public final class ChunkPlaceBlockConfig {
     public static final ModConfigSpec.IntValue CHUNKS_PER_TICK;
     public static final ModConfigSpec.IntValue MAX_MS_PER_TICK;
     public static final ModConfigSpec.BooleanValue LOADED_CHUNKS_ONLY;
+    public static final ModConfigSpec.BooleanValue MODIFY_UNLOADED_CHUNKS_IMMEDIATELY;
     public static final ModConfigSpec.BooleanValue ALLOW_CHUNK_GENERATION;
     public static final ModConfigSpec.BooleanValue ALLOW_CONCURRENT_TASKS;
 
@@ -58,8 +59,11 @@ public final class ChunkPlaceBlockConfig {
                 .comment("Maximum main-thread milliseconds spent by each task per tick.")
                 .defineInRange("maxMsPerTick", 20, 1, 50);
         LOADED_CHUNKS_ONLY = builder
-                .comment("When true, only already loaded chunks are modified.")
+                .comment("When true, immediate placement/break tasks only modify already loaded chunks. Unloaded chunks are still handled later when applyToFutureChunkLoads is true.")
                 .define("loadedChunksOnly", true);
+        MODIFY_UNLOADED_CHUNKS_IMMEDIATELY = builder
+                .comment("When true, immediate tasks may synchronously load saved chunks. This is expensive for large radii; keep false unless you accept server stalls.")
+                .define("modifyUnloadedChunksImmediately", false);
         ALLOW_CHUNK_GENERATION = builder
                 .comment("When true, missing chunks may be synchronously loaded or generated. Keep false for large radii.")
                 .define("allowChunkGeneration", false);

@@ -13,6 +13,7 @@ public record ChunkPlaceBlockSettings(
         int chunksPerTick,
         int maxMsPerTick,
         boolean loadedChunksOnly,
+        boolean modifyUnloadedChunksImmediately,
         boolean allowChunkGeneration,
         boolean allowConcurrentTasks
 ) {
@@ -28,6 +29,7 @@ public record ChunkPlaceBlockSettings(
                 ChunkPlaceBlockConfig.CHUNKS_PER_TICK.getAsInt(),
                 ChunkPlaceBlockConfig.MAX_MS_PER_TICK.getAsInt(),
                 ChunkPlaceBlockConfig.LOADED_CHUNKS_ONLY.getAsBoolean(),
+                ChunkPlaceBlockConfig.MODIFY_UNLOADED_CHUNKS_IMMEDIATELY.getAsBoolean(),
                 ChunkPlaceBlockConfig.ALLOW_CHUNK_GENERATION.getAsBoolean(),
                 ChunkPlaceBlockConfig.ALLOW_CONCURRENT_TASKS.getAsBoolean()
         );

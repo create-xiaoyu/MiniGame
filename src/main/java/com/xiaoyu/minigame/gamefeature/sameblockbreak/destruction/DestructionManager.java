@@ -21,16 +21,24 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 public final class DestructionManager {
     public static final DestructionManager INSTANCE = new DestructionManager();
 
     private static final ThreadLocal<Boolean> INTERNAL_BREAK = ThreadLocal.withInitial(() -> false);
+    private static final int FORBIDDEN_CLEANUP_FLAGS = Block.UPDATE_CLIENTS
+            | Block.UPDATE_SUPPRESS_DROPS
+            | Block.UPDATE_KNOWN_SHAPE
+            | Block.UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS;
 
     private final ConcurrentHashMap<ResourceKey<Level>, CopyOnWriteArrayList<DestructionTask>> activeTasks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<ResourceKey<Level>, Long> preparingTasks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<LoadedChunkKey, PendingLoadedChunkCleanup> pendingLoadedChunkCleanups = new ConcurrentHashMap<>();
     private final AtomicLong nextPreparationId = new AtomicLong();
 
     private DestructionManager() {
@@ -103,6 +111,8 @@ public final class DestructionManager {
     }
 
     public void tick(MinecraftServer server) {
+        processPendingLoadedChunkCleanups(server);
+
         for (ResourceKey<Level> dimension : List.copyOf(activeTasks.keySet())) {
             ServerLevel level = server.getLevel(dimension);
             CopyOnWriteArrayList<DestructionTask> tasks = activeTasks.get(dimension);
@@ -133,9 +143,29 @@ public final class DestructionManager {
         }
     }
 
+    public void scheduleLoadedChunkCleanup(ServerLevel level, LevelChunk chunk) {
+        DestructionSettings settings = DestructionSettings.fromConfig();
+        if (!settings.enabled()
+                || !settings.rememberBrokenBlocksForever()
+                || !ForbiddenBlocks.hasActiveForbiddenBlocks()) {
+            return;
+        }
+
+        ChunkPos chunkPos = chunk.getPos();
+        LoadedChunkKey key = new LoadedChunkKey(level.dimension(), chunkPos.x(), chunkPos.z());
+        pendingLoadedChunkCleanups.put(key, new PendingLoadedChunkCleanup(
+                level.dimension(),
+                chunkPos.x(),
+                chunkPos.z(),
+                level.getGameTime() + 1L,
+                0
+        ));
+    }
+
     public int cancelDimension(ResourceKey<Level> dimension) {
         Long preparing = preparingTasks.remove(dimension);
         int cancelled = preparing == null ? 0 : 1;
+        pendingLoadedChunkCleanups.keySet().removeIf(key -> key.dimension().equals(dimension));
 
         CopyOnWriteArrayList<DestructionTask> tasks = activeTasks.remove(dimension);
         if (tasks != null) {
@@ -151,6 +181,7 @@ public final class DestructionManager {
 
     public int cancelAll() {
         int cancelled = 0;
+        pendingLoadedChunkCleanups.clear();
         for (ResourceKey<Level> dimension : List.copyOf(preparingTasks.keySet())) {
             if (preparingTasks.remove(dimension) != null) {
                 cancelled++;
@@ -196,6 +227,60 @@ public final class DestructionManager {
     public boolean hasActiveTask(ResourceKey<Level> dimension) {
         CopyOnWriteArrayList<DestructionTask> tasks = activeTasks.get(dimension);
         return tasks != null && !tasks.isEmpty();
+    }
+
+    private void processPendingLoadedChunkCleanups(MinecraftServer server) {
+        DestructionSettings settings = DestructionSettings.fromConfig();
+        if (!settings.enabled()
+                || !settings.rememberBrokenBlocksForever()
+                || !ForbiddenBlocks.hasActiveForbiddenBlocks()) {
+            pendingLoadedChunkCleanups.clear();
+            return;
+        }
+
+        long deadline = System.nanoTime() + settings.maxMsPerTick() * 1_000_000L;
+        int processedChunks = 0;
+        for (var entry : List.copyOf(pendingLoadedChunkCleanups.entrySet())) {
+            if (processedChunks >= settings.chunksPerTick() || System.nanoTime() >= deadline) {
+                return;
+            }
+
+            PendingLoadedChunkCleanup pending = entry.getValue();
+            ServerLevel level = server.getLevel(pending.dimension());
+            if (level == null) {
+                pendingLoadedChunkCleanups.remove(entry.getKey(), pending);
+                continue;
+            }
+
+            if (level.getGameTime() < pending.dueGameTime()) {
+                continue;
+            }
+
+            if (!pendingLoadedChunkCleanups.remove(entry.getKey(), pending)) {
+                continue;
+            }
+
+            LevelChunk chunk = level.getChunkSource().getChunkNow(pending.chunkX(), pending.chunkZ());
+            if (chunk == null) {
+                if (pending.attempts() < 20) {
+                    pendingLoadedChunkCleanups.put(entry.getKey(), pending.retry(level.getGameTime() + 1L));
+                }
+                continue;
+            }
+
+            int[] replaced = new int[1];
+            runInternalBreak(() -> replaced[0] = ForbiddenBlocks.replaceInChunk(level, chunk, FORBIDDEN_CLEANUP_FLAGS));
+            if (replaced[0] > 0) {
+                MiniGame.debug(
+                        "Cleaned {} forbidden SameBlockBreak block(s) from loaded chunk {},{} in {}",
+                        replaced[0],
+                        pending.chunkX(),
+                        pending.chunkZ(),
+                        pending.dimension().identifier()
+                );
+            }
+            processedChunks++;
+        }
     }
 
     private void attachPreparedTask(
@@ -286,5 +371,14 @@ public final class DestructionManager {
                 player.sendSystemMessage(message);
             }
         }
+    }
+
+    private record PendingLoadedChunkCleanup(ResourceKey<Level> dimension, int chunkX, int chunkZ, long dueGameTime, int attempts) {
+        private PendingLoadedChunkCleanup retry(long dueGameTime) {
+            return new PendingLoadedChunkCleanup(dimension, chunkX, chunkZ, dueGameTime, attempts + 1);
+        }
+    }
+
+    private record LoadedChunkKey(ResourceKey<Level> dimension, int chunkX, int chunkZ) {
     }
 }

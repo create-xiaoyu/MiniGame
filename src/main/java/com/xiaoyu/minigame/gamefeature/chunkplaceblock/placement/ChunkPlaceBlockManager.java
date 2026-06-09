@@ -284,7 +284,7 @@ public final class ChunkPlaceBlockManager {
                 boolean finished = task.tick(level);
                 if (finished) {
                     tasks.remove(task);
-                    MiniGame.LOGGER.info("ChunkPlaceBlock {} {}", task.isCancelled() ? "cancelled" : "completed", task.summary());
+                    MiniGame.debug("ChunkPlaceBlock {} {}", task.isCancelled() ? "cancelled" : "completed", task.summary());
                 }
             }
 
@@ -309,7 +309,7 @@ public final class ChunkPlaceBlockManager {
 
         ResourceKey<Level> dimension = level.dimension();
         if (!settings.allowConcurrentTasks() && (hasActiveTask(dimension) || preparingTasks.containsKey(dimension))) {
-            MiniGame.LOGGER.debug("Skipped ChunkPlaceBlock {} task in {} because another task is active", operation, dimension.identifier());
+            MiniGame.debug("Skipped ChunkPlaceBlock {} task in {} because another task is active", operation, dimension.identifier());
             return;
         }
 
@@ -324,6 +324,21 @@ public final class ChunkPlaceBlockManager {
         MinecraftServer server = level.getServer();
         BlockPos immutableCenter = center.immutable();
         List<PlacedBlockTemplate> immutableTemplates = List.copyOf(templates);
+        if (useLoadedChunkSnapshot(settings)) {
+            long[] queue = ChunkPositionQueueBuilder.buildLoaded(level, immutableCenter, settings.radius());
+            attachPreparedTask(
+                    dimension,
+                    operation,
+                    immutableTemplates,
+                    immutableCenter,
+                    settings,
+                    preparationId,
+                    queue,
+                    null
+            );
+            return;
+        }
+
         CompletableFuture
                 .supplyAsync(() -> ChunkPositionQueueBuilder.build(immutableCenter, settings.radius()))
                 .whenComplete((queue, throwable) -> server.execute(() -> attachPreparedTask(
@@ -336,6 +351,10 @@ public final class ChunkPlaceBlockManager {
                         queue,
                         throwable
                 )));
+    }
+
+    private boolean useLoadedChunkSnapshot(ChunkPlaceBlockSettings settings) {
+        return settings.loadedChunksOnly() || !settings.modifyUnloadedChunksImmediately();
     }
 
     private void attachPreparedTask(
@@ -370,7 +389,7 @@ public final class ChunkPlaceBlockManager {
 
         ChunkPlaceBlockTask task = new ChunkPlaceBlockTask(operation, templates, center, queue, settings);
         activeTasks.computeIfAbsent(dimension, key -> new CopyOnWriteArrayList<>()).add(task);
-        MiniGame.LOGGER.info("Started ChunkPlaceBlock {} task in {} over {} chunks", operation, dimension.identifier(), queue.length);
+        MiniGame.debug("Started ChunkPlaceBlock {} task in {} over {} chunks", operation, dimension.identifier(), queue.length);
     }
 
     private boolean hasActiveTask(ResourceKey<Level> dimension) {
@@ -467,7 +486,7 @@ public final class ChunkPlaceBlockManager {
         }
 
         if (placed > 0) {
-            MiniGame.LOGGER.debug(
+            MiniGame.debug(
                     "Applied {} remembered ChunkPlaceBlock placement(s) in chunk {},{} (blockEntityCopies={})",
                     placed,
                     chunk.getPos().x(),
@@ -510,7 +529,7 @@ public final class ChunkPlaceBlockManager {
         }
 
         if (destroyed > 0) {
-            MiniGame.LOGGER.debug(
+            MiniGame.debug(
                     "Applied {} remembered ChunkPlaceBlock break(s) in chunk {},{}",
                     destroyed,
                     chunk.getPos().x(),

@@ -4,6 +4,8 @@ import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.UUID;
 
+import com.xiaoyu.minigame.gamefeature.common.world.ChunkLoading;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
@@ -18,9 +20,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
-import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 public final class DestructionTask {
     private static final int SILENT_REMOVE_FLAGS = Block.UPDATE_CLIENTS | Block.UPDATE_SUPPRESS_DROPS | Block.UPDATE_KNOWN_SHAPE;
@@ -45,6 +45,7 @@ public final class DestructionTask {
     private long blocksDestroyed;
     private long naturalBreaks;
     private ChunkCursor currentCursor;
+    private LevelChunk currentChunk;
     private boolean cancelled;
     private boolean completed;
 
@@ -95,21 +96,22 @@ public final class DestructionTask {
 
                 long chunkKey = chunkQueue[chunkIndex++];
                 chunksThisTick++;
-                LevelChunk chunk = getChunk(level, ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey));
-                if (chunk == null) {
+                currentChunk = getChunk(level, ChunkPos.getX(chunkKey), ChunkPos.getZ(chunkKey));
+                if (currentChunk == null) {
                     skippedChunks++;
                     processedChunks++;
                     continue;
                 }
 
-                currentCursor = new ChunkCursor(chunk.getPos().x(), chunk.getPos().z(), level.getMinY());
+                currentCursor = new ChunkCursor(currentChunk.getPos().x(), currentChunk.getPos().z());
             }
 
-            int scannedThisStep = processCurrentChunkStep(level, server, deadline, settings.blocksPerChunkStep(), settings.blocksPerTick() - blocksThisTick);
+            int scannedThisStep = processCurrentChunkStep(level, server, currentChunk, deadline, settings.blocksPerChunkStep(), settings.blocksPerTick() - blocksThisTick);
             blocksThisTick += scannedThisStep;
 
             if (currentCursor != null && currentCursor.isComplete()) {
                 currentCursor = null;
+                currentChunk = null;
                 processedChunks++;
             }
 
@@ -204,11 +206,11 @@ public final class DestructionTask {
         );
     }
 
-    private int processCurrentChunkStep(ServerLevel level, MinecraftServer server, long deadline, int maxStepBlocks, int remainingTickBlocks) {
+    private int processCurrentChunkStep(ServerLevel level, MinecraftServer server, LevelChunk chunk, long deadline, int maxStepBlocks, int remainingTickBlocks) {
         int scanned = 0;
         int limit = Math.min(maxStepBlocks, remainingTickBlocks);
         while (currentCursor != null && scanned < limit && System.nanoTime() < deadline) {
-            BlockPos.MutableBlockPos pos = currentCursor.next(level, scanPos);
+            BlockPos.MutableBlockPos pos = currentCursor.next(chunk, scanPos);
             if (pos == null) {
                 break;
             }
@@ -324,21 +326,13 @@ public final class DestructionTask {
     }
 
     private LevelChunk getChunk(ServerLevel level, int chunkX, int chunkZ) {
-        LevelChunk loadedChunk = level.getChunkSource().getChunkNow(chunkX, chunkZ);
-        if (loadedChunk != null) {
-            return loadedChunk;
-        }
-
-        if (settings.loadedChunksOnly()) {
-            return null;
-        }
-
-        if (settings.allowChunkGeneration()) {
-            return level.getChunk(chunkX, chunkZ);
-        }
-
-        ChunkAccess access = level.getChunk(chunkX, chunkZ, ChunkStatus.FULL, false);
-        return access instanceof LevelChunk levelChunk ? levelChunk : null;
+        return ChunkLoading.getProcessableChunk(
+                level,
+                chunkX,
+                chunkZ,
+                settings.loadedChunksOnly(),
+                settings.allowChunkGeneration()
+        );
     }
 
     private boolean isTriggerPos(BlockPos pos) {

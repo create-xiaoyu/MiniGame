@@ -8,13 +8,16 @@ import com.mojang.serialization.Codec;
 import com.xiaoyu.minigame.MiniGame;
 import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfig;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.level.saveddata.SavedData;
@@ -48,6 +51,10 @@ public final class ForbiddenBlocks extends SavedData {
 
     public static void clearActiveCache() {
         activeBlockIds = Set.of();
+    }
+
+    public static boolean hasActiveForbiddenBlocks() {
+        return SameBlockBreakConfig.REMEMBER_BROKEN_BLOCKS_FOREVER.getAsBoolean() && !activeBlockIds.isEmpty();
     }
 
     public static void beginPlayerPlacement() {
@@ -110,6 +117,30 @@ public final class ForbiddenBlocks extends SavedData {
         }
 
         return state;
+    }
+
+    public static boolean shouldReplace(BlockState state) {
+        return replacementFor(state) != state;
+    }
+
+    public static int replaceInChunk(ServerLevel level, LevelChunk chunk, int flags) {
+        if (!hasActiveForbiddenBlocks()) {
+            return 0;
+        }
+
+        int[] replaced = new int[1];
+        chunk.findBlocks(ForbiddenBlocks::shouldReplace, (pos, state) -> {
+            BlockState replacement = replacementFor(state);
+            if (replacement == state) {
+                return;
+            }
+
+            BlockPos immutablePos = pos.immutable();
+            if (level.setBlock(immutablePos, replacement, flags)) {
+                replaced[0]++;
+            }
+        });
+        return replaced[0];
     }
 
     private static boolean hasForbiddenWater(Set<Identifier> forbidden, BlockState state) {

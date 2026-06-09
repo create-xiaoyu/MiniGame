@@ -66,8 +66,8 @@ public final class SameBlockBreakConfig {
                 .comment("Maximum block positions scanned from one chunk before yielding.")
                 .defineInRange("blocksPerChunkStep", 3000, 1, 1_000_000);
         LOADED_CHUNKS_ONLY = builder
-                .comment("When true, only already loaded chunks are scanned.")
-                .define("loadedChunksOnly", true);
+                .comment("When true, only already loaded chunks are scanned. When false, saved chunks are loaded without generating missing chunks unless allowChunkGeneration is true.")
+                .define("loadedChunksOnly", false);
         ALLOW_CHUNK_GENERATION = builder
                 .comment("When true, missing chunks may be synchronously loaded or generated. Keep false for large radii.")
                 .define("allowChunkGeneration", false);

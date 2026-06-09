@@ -35,6 +35,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDestroyBlockEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.level.ExplosionEvent;
 import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
@@ -55,6 +56,7 @@ public final class SameBlockBreakFeature {
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, LivingDestroyBlockEvent.class, SameBlockBreakFeature::onLivingDestroyBlock);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, PlayerInteractEvent.RightClickItem.class, SameBlockBreakFeature::onBucketRightClickItem);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, PlayerInteractEvent.RightClickBlock.class, SameBlockBreakFeature::onBucketRightClickBlock);
+        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, false, ChunkEvent.Load.class, SameBlockBreakFeature::onChunkLoad);
         NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, SameBlockBreakFeature::onServerTick);
         NeoForge.EVENT_BUS.addListener(RegisterCommandsEvent.class, SameBlockBreakCommands::register);
         NeoForge.EVENT_BUS.addListener(ServerStartedEvent.class, SameBlockBreakFeature::onServerStarted);
@@ -117,6 +119,14 @@ public final class SameBlockBreakFeature {
         }
 
         DestructionManager.INSTANCE.start(level, event.getEntity(), event.getState(), event.getPos());
+    }
+
+    private static void onChunkLoad(ChunkEvent.Load event) {
+        if (!(event.getLevel() instanceof ServerLevel level)) {
+            return;
+        }
+
+        DestructionManager.INSTANCE.scheduleLoadedChunkCleanup(level, event.getChunk());
     }
 
     private static void onBucketRightClickItem(PlayerInteractEvent.RightClickItem event) {

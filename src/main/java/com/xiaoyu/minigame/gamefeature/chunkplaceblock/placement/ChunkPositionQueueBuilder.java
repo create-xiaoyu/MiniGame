@@ -5,6 +5,7 @@ import java.util.Comparator;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 
 public final class ChunkPositionQueueBuilder {
@@ -26,6 +27,34 @@ public final class ChunkPositionQueueBuilder {
                 chunks.add(ChunkPos.pack(chunkX, chunkZ));
             }
         }
+
+        chunks.sort(Comparator.comparingLong(key -> distanceSquared(key, centerChunkX, centerChunkZ)));
+
+        long[] queue = new long[chunks.size()];
+        for (int i = 0; i < chunks.size(); i++) {
+            queue[i] = chunks.get(i);
+        }
+        return queue;
+    }
+
+    public static long[] buildLoaded(ServerLevel level, BlockPos center, int radius) {
+        int centerChunkX = SectionPos.blockToSectionCoord(center.getX());
+        int centerChunkZ = SectionPos.blockToSectionCoord(center.getZ());
+        int minChunkX = SectionPos.blockToSectionCoord(center.getX() - radius);
+        int maxChunkX = SectionPos.blockToSectionCoord(center.getX() + radius);
+        int minChunkZ = SectionPos.blockToSectionCoord(center.getZ() - radius);
+        int maxChunkZ = SectionPos.blockToSectionCoord(center.getZ() + radius);
+
+        ArrayList<Long> chunks = new ArrayList<>();
+        level.getChunkSource().chunkMap.forEachReadyToSendChunk(chunk -> {
+            ChunkPos chunkPos = chunk.getPos();
+            if (chunkPos.x() >= minChunkX
+                    && chunkPos.x() <= maxChunkX
+                    && chunkPos.z() >= minChunkZ
+                    && chunkPos.z() <= maxChunkZ) {
+                chunks.add(ChunkPos.pack(chunkPos.x(), chunkPos.z()));
+            }
+        });
 
         chunks.sort(Comparator.comparingLong(key -> distanceSquared(key, centerChunkX, centerChunkZ)));
 
