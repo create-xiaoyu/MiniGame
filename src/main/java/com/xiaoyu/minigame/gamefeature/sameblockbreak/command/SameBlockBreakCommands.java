@@ -1,11 +1,10 @@
-package com.xiaoyu.minigame.sameblockbreak.command;
+package com.xiaoyu.minigame.gamefeature.sameblockbreak.command;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.xiaoyu.minigame.MiniGame;
-import com.xiaoyu.minigame.sameblockbreak.config.SameBlockBreakConfig;
-import com.xiaoyu.minigame.sameblockbreak.destruction.DestructionManager;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfig;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.destruction.DestructionManager;
 
-import com.xiaoyu.minigame.sameblockbreak.world.ForbiddenBlocks;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.world.ForbiddenBlocks;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;

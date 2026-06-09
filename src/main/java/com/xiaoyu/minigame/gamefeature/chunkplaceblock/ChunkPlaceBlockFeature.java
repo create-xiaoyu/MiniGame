@@ -1,11 +1,11 @@
-package com.xiaoyu.minigame.chunkplaceblock;
+package com.xiaoyu.minigame.gamefeature.chunkplaceblock;
 
 import java.util.List;
 
 import com.xiaoyu.minigame.MiniGame;
-import com.xiaoyu.minigame.chunkplaceblock.command.ChunkPlaceBlockCommands;
-import com.xiaoyu.minigame.chunkplaceblock.config.ChunkPlaceBlockConfig;
-import com.xiaoyu.minigame.chunkplaceblock.placement.ChunkPlaceBlockManager;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.command.ChunkPlaceBlockCommands;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.config.ChunkPlaceBlockConfig;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.placement.ChunkPlaceBlockManager;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;

@@ -1,4 +1,4 @@
-package com.xiaoyu.minigame.sameblockbreak.config;
+package com.xiaoyu.minigame.gamefeature.sameblockbreak.config;
 
 import net.neoforged.neoforge.common.ModConfigSpec;
 

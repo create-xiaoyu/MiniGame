@@ -1,8 +1,8 @@
-package com.xiaoyu.minigame.chunkplaceblock.command;
+package com.xiaoyu.minigame.gamefeature.chunkplaceblock.command;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.xiaoyu.minigame.chunkplaceblock.config.ChunkPlaceBlockConfig;
-import com.xiaoyu.minigame.chunkplaceblock.placement.ChunkPlaceBlockManager;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.config.ChunkPlaceBlockConfig;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.placement.ChunkPlaceBlockManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;

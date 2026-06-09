@@ -1,4 +1,4 @@
-package com.xiaoyu.minigame.sameblockbreak;
+package com.xiaoyu.minigame.gamefeature.sameblockbreak;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -7,11 +7,11 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.xiaoyu.minigame.MiniGame;
-import com.xiaoyu.minigame.sameblockbreak.command.SameBlockBreakCommands;
-import com.xiaoyu.minigame.sameblockbreak.config.SameBlockBreakConfig;
-import com.xiaoyu.minigame.sameblockbreak.destruction.DestructionManager;
-import com.xiaoyu.minigame.sameblockbreak.destruction.DestructionSettings;
-import com.xiaoyu.minigame.sameblockbreak.world.ForbiddenBlocks;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.command.SameBlockBreakCommands;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfig;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.destruction.DestructionManager;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.destruction.DestructionSettings;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.world.ForbiddenBlocks;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;

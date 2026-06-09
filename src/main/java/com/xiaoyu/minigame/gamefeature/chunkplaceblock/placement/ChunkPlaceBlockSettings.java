@@ -1,6 +1,6 @@
-package com.xiaoyu.minigame.chunkplaceblock.placement;
+package com.xiaoyu.minigame.gamefeature.chunkplaceblock.placement;
 
-import com.xiaoyu.minigame.chunkplaceblock.config.ChunkPlaceBlockConfig;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.config.ChunkPlaceBlockConfig;
 
 public record ChunkPlaceBlockSettings(
         boolean enabled,

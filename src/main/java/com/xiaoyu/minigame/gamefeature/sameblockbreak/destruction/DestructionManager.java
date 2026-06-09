@@ -1,4 +1,4 @@
-package com.xiaoyu.minigame.sameblockbreak.destruction;
+package com.xiaoyu.minigame.gamefeature.sameblockbreak.destruction;
 
 import java.util.List;
 import java.util.Objects;
@@ -9,7 +9,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.xiaoyu.minigame.MiniGame;
-import com.xiaoyu.minigame.sameblockbreak.world.ForbiddenBlocks;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.world.ForbiddenBlocks;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;

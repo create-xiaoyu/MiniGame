@@ -2,8 +2,8 @@ package com.xiaoyu.minigame.mixin.chunkplaceblock;
 
 import java.util.List;
 
-import com.xiaoyu.minigame.chunkplaceblock.ChunkPlaceBlockFeature;
-import com.xiaoyu.minigame.chunkplaceblock.placement.ChunkPlaceBlockManager;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.ChunkPlaceBlockFeature;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.placement.ChunkPlaceBlockManager;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;

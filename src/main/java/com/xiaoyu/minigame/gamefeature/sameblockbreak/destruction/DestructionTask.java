@@ -1,4 +1,4 @@
-package com.xiaoyu.minigame.sameblockbreak.destruction;
+package com.xiaoyu.minigame.gamefeature.sameblockbreak.destruction;
 
 import java.util.ArrayDeque;
 import java.util.HashSet;

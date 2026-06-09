@@ -1,4 +1,4 @@
-package com.xiaoyu.minigame.chunkplaceblock.config;
+package com.xiaoyu.minigame.gamefeature.chunkplaceblock.config;
 
 import net.neoforged.neoforge.common.ModConfigSpec;
 

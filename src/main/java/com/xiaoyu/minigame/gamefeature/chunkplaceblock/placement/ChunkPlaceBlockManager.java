@@ -1,4 +1,4 @@
-package com.xiaoyu.minigame.chunkplaceblock.placement;
+package com.xiaoyu.minigame.gamefeature.chunkplaceblock.placement;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -10,13 +10,13 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.xiaoyu.minigame.MiniGame;
-import com.xiaoyu.minigame.chunkplaceblock.config.ChunkPlaceBlockConfig;
-import com.xiaoyu.minigame.chunkplaceblock.world.ChunkBreakBlockData;
-import com.xiaoyu.minigame.chunkplaceblock.world.ChunkBreakBlockData.ChunkBreakRule;
-import com.xiaoyu.minigame.chunkplaceblock.world.ChunkPlaceBlockData;
-import com.xiaoyu.minigame.chunkplaceblock.world.ChunkPlaceBlockData.ChunkPlaceRule;
-import com.xiaoyu.minigame.sameblockbreak.config.SameBlockBreakConfig;
-import com.xiaoyu.minigame.sameblockbreak.world.ForbiddenBlocks;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.config.ChunkPlaceBlockConfig;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.world.ChunkBreakBlockData;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.world.ChunkBreakBlockData.ChunkBreakRule;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.world.ChunkPlaceBlockData;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.world.ChunkPlaceBlockData.ChunkPlaceRule;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfig;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.world.ForbiddenBlocks;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;

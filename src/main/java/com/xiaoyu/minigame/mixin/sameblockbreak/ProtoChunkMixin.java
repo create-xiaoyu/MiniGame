@@ -1,6 +1,6 @@
 package com.xiaoyu.minigame.mixin.sameblockbreak;
 
-import com.xiaoyu.minigame.sameblockbreak.world.ForbiddenBlocks;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.world.ForbiddenBlocks;
 
 import net.minecraft.world.level.chunk.ProtoChunk;
 import net.minecraft.world.level.block.state.BlockState;

@@ -1,4 +1,4 @@
-package com.xiaoyu.minigame.chunkplaceblock.placement;
+package com.xiaoyu.minigame.gamefeature.chunkplaceblock.placement;
 
 public enum ChunkPlaceOperation {
     PLACE_IN_EMPTY_BLOCKS,

@@ -1,4 +1,4 @@
-package com.xiaoyu.minigame.chunkplaceblock.world;
+package com.xiaoyu.minigame.gamefeature.chunkplaceblock.world;
 
 import java.util.ArrayList;
 import java.util.List;

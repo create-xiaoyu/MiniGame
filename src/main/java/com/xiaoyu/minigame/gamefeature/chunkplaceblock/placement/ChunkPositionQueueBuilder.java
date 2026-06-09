@@ -1,4 +1,4 @@
-package com.xiaoyu.minigame.sameblockbreak.destruction;
+package com.xiaoyu.minigame.gamefeature.chunkplaceblock.placement;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -7,8 +7,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 
-public final class ChunkQueueBuilder {
-    private ChunkQueueBuilder() {
+public final class ChunkPositionQueueBuilder {
+    private ChunkPositionQueueBuilder() {
     }
 
     public static long[] build(BlockPos center, int radius) {

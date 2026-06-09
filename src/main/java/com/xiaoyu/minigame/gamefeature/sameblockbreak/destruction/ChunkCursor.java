@@ -1,4 +1,4 @@
-package com.xiaoyu.minigame.sameblockbreak.destruction;
+package com.xiaoyu.minigame.gamefeature.sameblockbreak.destruction;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;

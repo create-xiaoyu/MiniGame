@@ -1,6 +1,6 @@
-package com.xiaoyu.minigame.sameblockbreak.destruction;
+package com.xiaoyu.minigame.gamefeature.sameblockbreak.destruction;
 
-import com.xiaoyu.minigame.sameblockbreak.config.SameBlockBreakConfig;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfig;
 
 public record DestructionSettings(
         boolean enabled,

@@ -1,6 +1,6 @@
 package com.xiaoyu.minigame.mixin.chunkplaceblock;
 
-import com.xiaoyu.minigame.chunkplaceblock.placement.ChunkPlaceBlockManager;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.placement.ChunkPlaceBlockManager;
 
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.spongepowered.asm.mixin.Mixin;

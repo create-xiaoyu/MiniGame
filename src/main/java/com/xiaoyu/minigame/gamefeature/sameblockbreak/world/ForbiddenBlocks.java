@@ -1,4 +1,4 @@
-package com.xiaoyu.minigame.sameblockbreak.world;
+package com.xiaoyu.minigame.gamefeature.sameblockbreak.world;
 
 import java.util.HashSet;
 import java.util.List;
@@ -6,7 +6,7 @@ import java.util.Set;
 
 import com.mojang.serialization.Codec;
 import com.xiaoyu.minigame.MiniGame;
-import com.xiaoyu.minigame.sameblockbreak.config.SameBlockBreakConfig;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfig;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
