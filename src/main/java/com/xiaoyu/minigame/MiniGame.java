@@ -1,5 +1,6 @@
 package com.xiaoyu.minigame;
 
+import com.xiaoyu.minigame.gamefeature.common.CommonFeature;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
@@ -15,6 +16,7 @@ public class MiniGame {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public MiniGame(ModContainer modContainer) {
+        CommonFeature.register(modContainer);
         SameBlockBreakFeature.register(modContainer);
         ChunkPlaceBlockFeature.register(modContainer);
     }
