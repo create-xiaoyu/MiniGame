@@ -2,6 +2,7 @@ package com.xiaoyu.minigame.gamefeature.sameblockbreak.commands;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.xiaoyu.minigame.gamefeature.sameblockbreak.SameBlockBreakManager;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfig;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
@@ -56,18 +57,26 @@ public final class SameBlockBreakCommands {
     }
 
     private static int start(CommandSourceStack source, String blockId) {
-        boolean started = SameBlockBreakManager.startFromCommand(
+        SameBlockBreakManager.StartResult result = SameBlockBreakManager.startFromCommand(
                 source.getLevel(),
                 blockId,
                 BlockPos.containing(source.getPosition()),
                 source.getEntity()
         );
-        if (started) {
-            source.sendSystemMessage(Component.translatable("command.minigame.sameblockbreak.start.success", blockId));
-            return 1;
+
+        switch (result) {
+            case STARTED -> {
+                source.sendSystemMessage(Component.translatable("command.minigame.sameblockbreak.start.success", blockId));
+                return 1;
+            }
+            case ALREADY_RUNNING -> source.sendSystemMessage(Component.translatable("command.minigame.sameblockbreak.start.already_running", blockId));
+            case MAX_ACTIVE_TARGETS -> source.sendSystemMessage(Component.translatable(
+                    "command.minigame.sameblockbreak.start.max_active",
+                    SameBlockBreakConfig.MAX_ACTIVE_TARGETS.getAsInt()
+            ));
+            case INVALID_BLOCK -> source.sendSystemMessage(Component.translatable("command.minigame.sameblockbreak.unknown_block", blockId));
         }
 
-        source.sendSystemMessage(Component.translatable("command.minigame.sameblockbreak.unknown_block", blockId));
         return 0;
     }
 

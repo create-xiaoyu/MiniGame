@@ -58,7 +58,12 @@ public final class SameBlockBreakManager {
         }
 
         LevelState levelState = stateFor(level);
-        if (!levelState.activateFromTrigger(level, block, blockId, origin.immutable(), breaker)) {
+        ActivationResult activationResult = levelState.activateFromTrigger(level, block, blockId, origin.immutable(), breaker);
+        if (activationResult == ActivationResult.ALREADY_RUNNING) {
+            return;
+        }
+
+        if (activationResult == ActivationResult.MAX_ACTIVE_TARGETS) {
             if (breaker instanceof ServerPlayer player) {
                 player.sendSystemMessage(Component.translatable(
                         "message.minigame.sameblockbreak.max_active",
@@ -74,15 +79,19 @@ public final class SameBlockBreakManager {
         }
     }
 
-    public static boolean startFromCommand(ServerLevel level, String blockIdText, BlockPos origin, @Nullable Entity sourceEntity) {
+    public static StartResult startFromCommand(ServerLevel level, String blockIdText, BlockPos origin, @Nullable Entity sourceEntity) {
         ResolvedBlock resolvedBlock = resolveBlock(blockIdText);
         if (resolvedBlock == null || isDenylisted(resolvedBlock.id())) {
-            return false;
+            return StartResult.INVALID_BLOCK;
         }
 
         LevelState levelState = stateFor(level);
-        if (!levelState.activateFromTrigger(level, resolvedBlock.block(), resolvedBlock.id(), origin.immutable(), sourceEntity)) {
-            return false;
+        ActivationResult activationResult = levelState.activateFromTrigger(level, resolvedBlock.block(), resolvedBlock.id(), origin.immutable(), sourceEntity);
+        if (activationResult == ActivationResult.ALREADY_RUNNING) {
+            return StartResult.ALREADY_RUNNING;
+        }
+        if (activationResult == ActivationResult.MAX_ACTIVE_TARGETS) {
+            return StartResult.MAX_ACTIVE_TARGETS;
         }
         updateActivePreventionSet();
 
@@ -90,7 +99,7 @@ public final class SameBlockBreakManager {
             addPersistedRule(level.getServer(), resolvedBlock.id());
         }
 
-        return true;
+        return StartResult.STARTED;
     }
 
     public static boolean forget(ServerLevel level, String blockIdText) {
@@ -322,6 +331,13 @@ public final class SameBlockBreakManager {
     ) {
     }
 
+    public enum StartResult {
+        STARTED,
+        ALREADY_RUNNING,
+        MAX_ACTIVE_TARGETS,
+        INVALID_BLOCK
+    }
+
     private static final class LevelState {
         private final Map<Block, ActiveTarget> targets = new IdentityHashMap<>();
         private long loadedPersistedRulesVersion = -1L;
@@ -351,11 +367,15 @@ public final class SameBlockBreakManager {
             }
         }
 
-        private boolean activateFromTrigger(ServerLevel level, Block block, Identifier blockId, BlockPos origin, @Nullable Entity breaker) {
+        private ActivationResult activateFromTrigger(ServerLevel level, Block block, Identifier blockId, BlockPos origin, @Nullable Entity breaker) {
             ActiveTarget target = this.targets.get(block);
+            if (target != null && target.hasWork()) {
+                return ActivationResult.ALREADY_RUNNING;
+            }
+
             if (target == null) {
                 if (this.targets.size() >= SameBlockBreakConfig.MAX_ACTIVE_TARGETS.getAsInt()) {
-                    return false;
+                    return ActivationResult.MAX_ACTIVE_TARGETS;
                 }
 
                 target = new ActiveTarget(block, blockId);
@@ -363,7 +383,7 @@ public final class SameBlockBreakManager {
             }
 
             target.refresh(level, origin, breaker, ++this.nextActivationSequence);
-            return true;
+            return ActivationResult.STARTED;
         }
 
         private boolean activatePersisted(Block block, Identifier blockId) {
@@ -377,8 +397,13 @@ public final class SameBlockBreakManager {
 
         private void enqueueLoadedChunks(ServerLevel level) {
             for (LevelChunk chunk : ChunkTracker.getLoadedChunks(level)) {
+                int maxSectionY = queueMaxSectionY(chunk);
+                if (maxSectionY < chunk.getMinSectionY()) {
+                    continue;
+                }
+
                 for (ActiveTarget target : this.targets.values()) {
-                    target.enqueueChunk(chunk);
+                    target.enqueueChunk(chunk, maxSectionY);
                 }
             }
         }
@@ -564,18 +589,28 @@ public final class SameBlockBreakManager {
         }
 
         private void enqueueChunk(LevelChunk chunk) {
+            int maxSectionY = queueMaxSectionY(chunk);
+            if (maxSectionY < chunk.getMinSectionY()) {
+                return;
+            }
+
+            this.enqueueChunk(chunk, maxSectionY);
+        }
+
+        private void enqueueChunk(LevelChunk chunk, int maxSectionY) {
             ChunkPos chunkPos = chunk.getPos();
-            for (int sectionY = chunk.getMinSectionY(); sectionY <= chunk.getMaxSectionY(); sectionY++) {
+            for (int sectionY = chunk.getMinSectionY(); sectionY <= maxSectionY; sectionY++) {
+                long sectionKey = SectionPos.asLong(chunkPos.x(), sectionY, chunkPos.z());
+                if (this.completedSections.contains(sectionKey) || this.queuedSections.contains(sectionKey)) {
+                    continue;
+                }
+
                 LevelChunkSection section = chunk.getSection(chunk.getSectionIndexFromSectionY(sectionY));
                 if (section.hasOnlyAir() || !section.maybeHas(this::matches)) {
                     continue;
                 }
 
-                long sectionKey = SectionPos.asLong(chunkPos.x(), sectionY, chunkPos.z());
-                if (this.completedSections.contains(sectionKey) || !this.queuedSections.add(sectionKey)) {
-                    continue;
-                }
-
+                this.queuedSections.add(sectionKey);
                 this.tasks.add(new SectionTask(chunkPos.x(), sectionY, chunkPos.z(), sectionKey));
             }
         }
@@ -928,6 +963,19 @@ public final class SameBlockBreakManager {
                 && level.getChunkSource().getChunkNow(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ())) != null;
     }
 
+    private static int queueMaxSectionY(LevelChunk chunk) {
+        if (!SameBlockBreakConfig.SKIP_SECTIONS_ABOVE_HIGHEST_FILLED.get()) {
+            return chunk.getMaxSectionY();
+        }
+
+        int highestFilledSectionIndex = chunk.getHighestFilledSectionIndex();
+        if (highestFilledSectionIndex < 0) {
+            return chunk.getMinSectionY() - 1;
+        }
+
+        return Math.min(chunk.getMaxSectionY(), chunk.getSectionYFromSectionIndex(highestFilledSectionIndex));
+    }
+
     private record SupportCheck(long pos, int depth) {
     }
 
@@ -938,6 +986,12 @@ public final class SameBlockBreakManager {
         PARTIAL_CHANGED,
         COMPLETE,
         UNLOADED
+    }
+
+    private enum ActivationResult {
+        STARTED,
+        ALREADY_RUNNING,
+        MAX_ACTIVE_TARGETS
     }
 
     private static final class TickBudget {

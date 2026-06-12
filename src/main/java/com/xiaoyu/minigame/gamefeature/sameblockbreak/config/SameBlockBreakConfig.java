@@ -15,6 +15,7 @@ public final class SameBlockBreakConfig {
     public static final ModConfigSpec.BooleanValue PREVENT_NON_ENTITY_PLACEMENT_WITH_MIXIN;
     public static final ModConfigSpec.BooleanValue SEND_START_MESSAGE;
     public static final ModConfigSpec.BooleanValue SEND_COMPLETION_MESSAGE;
+    public static final ModConfigSpec.BooleanValue SKIP_SECTIONS_ABOVE_HIGHEST_FILLED;
     public static final ModConfigSpec.IntValue MAX_ACTIVE_TARGETS;
     public static final ModConfigSpec.IntValue MAX_SECTIONS_PER_TICK;
     public static final ModConfigSpec.IntValue MAX_SCANNED_BLOCKS_PER_TICK;
@@ -96,6 +97,13 @@ public final class SameBlockBreakConfig {
         builder.pop();
         builder.push("queue");
 
+        SKIP_SECTIONS_ABOVE_HIGHEST_FILLED = builder
+                .comment(
+                        "Skips section-queue checks above a chunk's highest non-empty section.",
+                        "This avoids repeatedly checking empty sky sections. Disable this if a mod creates unusual chunks where this vanilla height cache is unreliable."
+                )
+                .define("skipSectionsAboveHighestFilled", true);
+
         MAX_SECTIONS_PER_TICK = builder
                 .comment("Maximum number of 16x16x16 sections that can finish scanning per level tick.")
                 .defineInRange("maxSectionsPerTick", 8, 1, 1024);
@@ -120,7 +128,7 @@ public final class SameBlockBreakConfig {
 
         NORMAL_DESTROY_DROP_LIMIT = builder
                 .comment("Maximum number of automatically destroyed nearby blocks that may drop resources per trigger.")
-                .defineInRange("normalDestroyDropLimit", 128, 0, Integer.MAX_VALUE);
+                .defineInRange("normalDestroyDropLimit", 2048, 0, Integer.MAX_VALUE);
 
         NORMAL_DESTROY_UPDATE_LIMIT = builder
                 .comment("Neighbor update limit used by normal Level#destroyBlock calls.")

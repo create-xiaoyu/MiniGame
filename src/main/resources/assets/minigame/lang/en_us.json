@@ -2,6 +2,8 @@
   "command.minigame.minigame.debug.getLoadedChunks": "Loaded chunk count: %d",
   "command.minigame.sameblockbreak.status": "Same-block cleanup: active rules %d, queued sections %d, completed sections %d, support checks %d, persistent rules %d",
   "command.minigame.sameblockbreak.start.success": "Started cleanup for block: %s",
+  "command.minigame.sameblockbreak.start.already_running": "Cleanup for block %s is already running",
+  "command.minigame.sameblockbreak.start.max_active": "Same-block cleanup rule limit reached: %d",
   "command.minigame.sameblockbreak.unknown_block": "Unknown or denylisted block: %s",
   "command.minigame.sameblockbreak.forget.success": "Removed cleanup rule: %s",
   "command.minigame.sameblockbreak.forget.not_found": "No cleanup rule found: %s",
