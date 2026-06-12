@@ -35,7 +35,11 @@ public final class SameBlockBreakSavedData extends SavedData {
     }
 
     public boolean addTarget(Identifier blockId) {
-        boolean changed = this.targetBlockIds.add(blockId.toString());
+        return this.addTarget(blockId.toString());
+    }
+
+    public boolean addTarget(String targetId) {
+        boolean changed = this.targetBlockIds.add(targetId);
         if (changed) {
             this.setDirty();
         }

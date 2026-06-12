@@ -18,13 +18,18 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.material.FlowingFluid;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.FluidState;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
@@ -35,11 +40,14 @@ import java.util.Set;
 import java.util.UUID;
 
 public final class SameBlockBreakManager {
+    private static final String FLUID_TARGET_PREFIX = "fluid:";
     private static final Map<ServerLevel, LevelState> LEVEL_STATES = new IdentityHashMap<>();
     private static final ThreadLocal<Integer> ENTITY_PLACEMENT_BYPASS_DEPTH = ThreadLocal.withInitial(() -> 0);
     private static volatile Set<String> persistedPreventedBlockIds = Set.of();
     private static volatile Set<Block> persistedPreventedBlocks = Set.of();
+    private static volatile Set<Fluid> persistedPreventedFluids = Set.of();
     private static volatile Set<Block> activePreventedBlocks = Set.of();
+    private static volatile Set<Fluid> activePreventedFluids = Set.of();
     private static volatile boolean globalRulesLoaded;
     private static volatile long persistedRulesVersion;
 
@@ -51,14 +59,30 @@ public final class SameBlockBreakManager {
             return;
         }
 
-        Block block = state.getBlock();
-        Identifier blockId = BuiltInRegistries.BLOCK.getKey(block);
-        if (blockId == null || isDenylisted(blockId)) {
+        CleanupTarget target = blockTarget(state);
+        if (target == null) {
             return;
         }
 
+        startTargetFromTrigger(level, target, origin, breaker);
+    }
+
+    public static void startFromBucketPickup(ServerLevel level, BlockPos origin, BlockState pickedState, @Nullable Entity picker) {
+        if (!SameBlockBreakConfig.ENABLED.get() || !SameBlockBreakConfig.TRIGGER_BUCKET_FLUID_PICKUPS.get()) {
+            return;
+        }
+
+        CleanupTarget target = fluidTarget(pickedState.getFluidState());
+        if (target == null) {
+            return;
+        }
+
+        startTargetFromTrigger(level, target, origin, picker);
+    }
+
+    private static void startTargetFromTrigger(ServerLevel level, CleanupTarget target, BlockPos origin, @Nullable Entity breaker) {
         LevelState levelState = stateFor(level);
-        ActivationResult activationResult = levelState.activateFromTrigger(level, block, blockId, origin.immutable(), breaker);
+        ActivationResult activationResult = levelState.activateFromTrigger(level, target, origin.immutable(), breaker);
         if (activationResult == ActivationResult.ALREADY_RUNNING) {
             return;
         }
@@ -75,18 +99,18 @@ public final class SameBlockBreakManager {
         updateActivePreventionSet();
 
         if (SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()) {
-            addPersistedRule(level.getServer(), blockId);
+            addPersistedRule(level.getServer(), target);
         }
     }
 
     public static StartResult startFromCommand(ServerLevel level, String blockIdText, BlockPos origin, @Nullable Entity sourceEntity) {
-        ResolvedBlock resolvedBlock = resolveBlock(blockIdText);
-        if (resolvedBlock == null || isDenylisted(resolvedBlock.id())) {
+        CleanupTarget target = resolveBlockTarget(blockIdText);
+        if (target == null) {
             return StartResult.INVALID_BLOCK;
         }
 
         LevelState levelState = stateFor(level);
-        ActivationResult activationResult = levelState.activateFromTrigger(level, resolvedBlock.block(), resolvedBlock.id(), origin.immutable(), sourceEntity);
+        ActivationResult activationResult = levelState.activateFromTrigger(level, target, origin.immutable(), sourceEntity);
         if (activationResult == ActivationResult.ALREADY_RUNNING) {
             return StartResult.ALREADY_RUNNING;
         }
@@ -96,23 +120,26 @@ public final class SameBlockBreakManager {
         updateActivePreventionSet();
 
         if (SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()) {
-            addPersistedRule(level.getServer(), resolvedBlock.id());
+            addPersistedRule(level.getServer(), target);
         }
 
         return StartResult.STARTED;
     }
 
     public static boolean forget(ServerLevel level, String blockIdText) {
-        Identifier blockId = Identifier.tryParse(blockIdText);
-        if (blockId == null) {
+        Set<String> targetIds = targetIdsForInput(blockIdText);
+        if (targetIds.isEmpty()) {
             return false;
         }
 
         MinecraftServer server = level.getServer();
         ensureGlobalRulesLoaded(server);
-        boolean changed = savedData(server).removeTarget(blockId.toString());
-        for (LevelState levelState : LEVEL_STATES.values()) {
-            changed |= levelState.removeTarget(blockId.toString());
+        boolean changed = false;
+        for (String targetId : targetIds) {
+            changed |= savedData(server).removeTarget(targetId);
+            for (LevelState levelState : LEVEL_STATES.values()) {
+                changed |= levelState.removeTarget(targetId);
+            }
         }
         replacePersistedPreventionSet(savedData(server).targetBlockIds());
         updateActivePreventionSet();
@@ -161,7 +188,13 @@ public final class SameBlockBreakManager {
         }
 
         Block block = newState.getBlock();
-        return persistedPreventedBlocks.contains(block) || activePreventedBlocks.contains(block);
+        if (persistedPreventedBlocks.contains(block) || activePreventedBlocks.contains(block)) {
+            return true;
+        }
+
+        FluidState fluidState = newState.getFluidState();
+        return !fluidState.isEmpty()
+                && (persistedPreventedFluids.contains(fluidState.getType()) || activePreventedFluids.contains(fluidState.getType()));
     }
 
     public static void beginEntityPlacementBypass() {
@@ -217,6 +250,7 @@ public final class SameBlockBreakManager {
         LEVEL_STATES.clear();
         replacePersistedPreventionSet(Set.of());
         activePreventedBlocks = Set.of();
+        activePreventedFluids = Set.of();
         globalRulesLoaded = false;
     }
 
@@ -242,11 +276,11 @@ public final class SameBlockBreakManager {
         }
     }
 
-    private static void addPersistedRule(MinecraftServer server, Identifier blockId) {
+    private static void addPersistedRule(MinecraftServer server, CleanupTarget target) {
         ensureGlobalRulesLoaded(server);
-        if (savedData(server).addTarget(blockId)) {
+        if (savedData(server).addTarget(target.storageId())) {
             HashSet<String> updated = new HashSet<>(persistedPreventedBlockIds);
-            updated.add(blockId.toString());
+            updated.add(target.storageId());
             replacePersistedPreventionSet(updated);
         }
     }
@@ -258,40 +292,73 @@ public final class SameBlockBreakManager {
                 continue;
             }
 
-            for (String targetBlockId : legacyData.targetBlockIds()) {
-                ResolvedBlock resolvedBlock = resolveBlock(targetBlockId);
-                if (resolvedBlock != null && !isDenylisted(resolvedBlock.id())) {
-                    globalData.addTarget(resolvedBlock.id());
+            for (String targetId : legacyData.targetBlockIds()) {
+                CleanupTarget target = resolveTarget(targetId);
+                if (target != null) {
+                    globalData.addTarget(target.storageId());
                 }
             }
         }
     }
 
-    private static void replacePersistedPreventionSet(Set<String> blockIds) {
-        HashSet<String> validBlockIds = new HashSet<>();
+    private static void replacePersistedPreventionSet(Set<String> targetIds) {
+        HashSet<String> validTargetIds = new HashSet<>();
         HashSet<Block> validBlocks = new HashSet<>();
-        for (String blockId : blockIds) {
-            ResolvedBlock resolvedBlock = resolveBlock(blockId);
-            if (resolvedBlock != null && !isDenylisted(resolvedBlock.id())) {
-                validBlockIds.add(resolvedBlock.id().toString());
-                validBlocks.add(resolvedBlock.block());
+        HashSet<Fluid> validFluids = new HashSet<>();
+        for (String targetId : targetIds) {
+            CleanupTarget target = resolveTarget(targetId);
+            if (target != null) {
+                validTargetIds.add(target.storageId());
+                target.collectPreventedBlocks(validBlocks);
+                target.collectPreventedFluids(validFluids);
             }
         }
 
-        persistedPreventedBlockIds = Set.copyOf(validBlockIds);
+        persistedPreventedBlockIds = Set.copyOf(validTargetIds);
         persistedPreventedBlocks = Set.copyOf(validBlocks);
+        persistedPreventedFluids = Set.copyOf(validFluids);
         persistedRulesVersion++;
     }
 
     private static void updateActivePreventionSet() {
         HashSet<Block> blocks = new HashSet<>();
+        HashSet<Fluid> fluids = new HashSet<>();
         for (LevelState levelState : LEVEL_STATES.values()) {
-            levelState.collectTargetBlocks(blocks);
+            levelState.collectPreventedTargets(blocks, fluids);
         }
         activePreventedBlocks = Set.copyOf(blocks);
+        activePreventedFluids = Set.copyOf(fluids);
     }
 
-    private static @Nullable ResolvedBlock resolveBlock(String blockIdText) {
+    private static @Nullable CleanupTarget blockTarget(BlockState state) {
+        if (state.isAir()) {
+            return null;
+        }
+
+        Block block = state.getBlock();
+        Identifier blockId = BuiltInRegistries.BLOCK.getKey(block);
+        if (blockId == null || isDenylisted(blockId)) {
+            return null;
+        }
+
+        return CleanupTarget.block(blockId, block);
+    }
+
+    private static @Nullable CleanupTarget fluidTarget(FluidState fluidState) {
+        if (fluidState.isEmpty()) {
+            return null;
+        }
+
+        Fluid sourceFluid = sourceFluid(fluidState.getType());
+        Identifier fluidId = BuiltInRegistries.FLUID.getKey(sourceFluid);
+        if (fluidId == null || isDenylisted(fluidId)) {
+            return null;
+        }
+
+        return CleanupTarget.fluid(fluidId, sourceFluid);
+    }
+
+    private static @Nullable CleanupTarget resolveBlockTarget(String blockIdText) {
         Identifier blockId = Identifier.tryParse(blockIdText);
         if (blockId == null || !BuiltInRegistries.BLOCK.containsKey(blockId)) {
             return null;
@@ -302,7 +369,65 @@ public final class SameBlockBreakManager {
             return null;
         }
 
-        return new ResolvedBlock(blockId, block);
+        if (isDenylisted(blockId)) {
+            return null;
+        }
+
+        return CleanupTarget.block(blockId, block);
+    }
+
+    private static @Nullable CleanupTarget resolveTarget(String targetIdText) {
+        if (targetIdText.startsWith(FLUID_TARGET_PREFIX)) {
+            Identifier fluidId = Identifier.tryParse(targetIdText.substring(FLUID_TARGET_PREFIX.length()));
+            if (fluidId == null || !BuiltInRegistries.FLUID.containsKey(fluidId) || isDenylisted(fluidId)) {
+                return null;
+            }
+
+            Fluid fluid = BuiltInRegistries.FLUID.getValue(fluidId);
+            if (fluid == null || fluid.defaultFluidState().isEmpty()) {
+                return null;
+            }
+
+            Fluid sourceFluid = sourceFluid(fluid);
+            Identifier sourceFluidId = BuiltInRegistries.FLUID.getKey(sourceFluid);
+            return sourceFluidId == null ? null : CleanupTarget.fluid(sourceFluidId, sourceFluid);
+        }
+
+        return resolveBlockTarget(targetIdText);
+    }
+
+    private static Set<String> targetIdsForInput(String targetIdText) {
+        HashSet<String> targetIds = new HashSet<>();
+        CleanupTarget target = resolveTarget(targetIdText);
+        if (target != null) {
+            targetIds.add(target.storageId());
+        }
+
+        Identifier id = Identifier.tryParse(targetIdText);
+        if (id != null && BuiltInRegistries.FLUID.containsKey(id)) {
+            Fluid fluid = BuiltInRegistries.FLUID.getValue(id);
+            if (fluid != null && !fluid.defaultFluidState().isEmpty()) {
+                Fluid sourceFluid = sourceFluid(fluid);
+                Identifier sourceFluidId = BuiltInRegistries.FLUID.getKey(sourceFluid);
+                if (sourceFluidId != null && !isDenylisted(sourceFluidId)) {
+                    targetIds.add(FLUID_TARGET_PREFIX + sourceFluidId);
+                }
+            }
+        }
+
+        return targetIds;
+    }
+
+    private static Fluid sourceFluid(Fluid fluid) {
+        return fluid instanceof FlowingFluid flowingFluid ? flowingFluid.getSource() : fluid;
+    }
+
+    private static void collectFluidVariants(Fluid fluid, Set<Fluid> fluids) {
+        fluids.add(fluid);
+        if (fluid instanceof FlowingFluid flowingFluid) {
+            fluids.add(flowingFluid.getSource());
+            fluids.add(flowingFluid.getFlowing());
+        }
     }
 
     private static boolean isDenylisted(Identifier blockId) {
@@ -319,7 +444,57 @@ public final class SameBlockBreakManager {
         return ENTITY_PLACEMENT_BYPASS_DEPTH.get() > 0;
     }
 
-    private record ResolvedBlock(Identifier id, Block block) {
+    private record CleanupTarget(TargetKind kind, Identifier id, @Nullable Block block, @Nullable Fluid fluid) {
+        private static CleanupTarget block(Identifier id, Block block) {
+            return new CleanupTarget(TargetKind.BLOCK, id, block, null);
+        }
+
+        private static CleanupTarget fluid(Identifier id, Fluid fluid) {
+            return new CleanupTarget(TargetKind.FLUID, id, null, fluid);
+        }
+
+        private boolean matches(BlockState state) {
+            if (this.kind == TargetKind.BLOCK) {
+                return state.is(this.block);
+            }
+
+            FluidState fluidState = state.getFluidState();
+            return !fluidState.isEmpty() && sourceFluid(fluidState.getType()).isSame(this.fluid);
+        }
+
+        private Component displayName() {
+            if (this.kind == TargetKind.BLOCK) {
+                return this.block.getName();
+            }
+
+            BlockState legacyBlock = this.fluid.defaultFluidState().createLegacyBlock();
+            if (!legacyBlock.isAir()) {
+                return legacyBlock.getBlock().getName();
+            }
+
+            return Component.literal(this.id.toString());
+        }
+
+        private String storageId() {
+            return this.kind == TargetKind.FLUID ? FLUID_TARGET_PREFIX + this.id : this.id.toString();
+        }
+
+        private void collectPreventedBlocks(Set<Block> blocks) {
+            if (this.kind == TargetKind.BLOCK) {
+                blocks.add(this.block);
+            }
+        }
+
+        private void collectPreventedFluids(Set<Fluid> fluids) {
+            if (this.kind == TargetKind.FLUID) {
+                collectFluidVariants(this.fluid, fluids);
+            }
+        }
+    }
+
+    private enum TargetKind {
+        BLOCK,
+        FLUID
     }
 
     public record SameBlockBreakStatus(
@@ -339,7 +514,7 @@ public final class SameBlockBreakManager {
     }
 
     private static final class LevelState {
-        private final Map<Block, ActiveTarget> targets = new IdentityHashMap<>();
+        private final Map<String, ActiveTarget> targets = new HashMap<>();
         private long loadedPersistedRulesVersion = -1L;
         private long nextActivationSequence;
 
@@ -356,10 +531,10 @@ public final class SameBlockBreakManager {
 
             boolean changed = false;
             this.loadedPersistedRulesVersion = currentVersion;
-            for (String targetBlockId : persistedPreventedBlockIds) {
-                ResolvedBlock resolvedBlock = resolveBlock(targetBlockId);
-                if (resolvedBlock != null && !isDenylisted(resolvedBlock.id())) {
-                    changed |= this.activatePersisted(resolvedBlock.block(), resolvedBlock.id());
+            for (String targetId : persistedPreventedBlockIds) {
+                CleanupTarget target = resolveTarget(targetId);
+                if (target != null) {
+                    changed |= this.activatePersisted(target);
                 }
             }
             if (changed) {
@@ -367,8 +542,8 @@ public final class SameBlockBreakManager {
             }
         }
 
-        private ActivationResult activateFromTrigger(ServerLevel level, Block block, Identifier blockId, BlockPos origin, @Nullable Entity breaker) {
-            ActiveTarget target = this.targets.get(block);
+        private ActivationResult activateFromTrigger(ServerLevel level, CleanupTarget cleanupTarget, BlockPos origin, @Nullable Entity breaker) {
+            ActiveTarget target = this.targets.get(cleanupTarget.storageId());
             if (target != null && target.hasWork()) {
                 return ActivationResult.ALREADY_RUNNING;
             }
@@ -378,20 +553,20 @@ public final class SameBlockBreakManager {
                     return ActivationResult.MAX_ACTIVE_TARGETS;
                 }
 
-                target = new ActiveTarget(block, blockId);
-                this.targets.put(block, target);
+                target = new ActiveTarget(cleanupTarget);
+                this.targets.put(cleanupTarget.storageId(), target);
             }
 
             target.refresh(level, origin, breaker, ++this.nextActivationSequence);
             return ActivationResult.STARTED;
         }
 
-        private boolean activatePersisted(Block block, Identifier blockId) {
-            if (this.targets.containsKey(block) || this.targets.size() >= SameBlockBreakConfig.MAX_ACTIVE_TARGETS.getAsInt()) {
+        private boolean activatePersisted(CleanupTarget cleanupTarget) {
+            if (this.targets.containsKey(cleanupTarget.storageId()) || this.targets.size() >= SameBlockBreakConfig.MAX_ACTIVE_TARGETS.getAsInt()) {
                 return false;
             }
 
-            this.targets.put(block, new ActiveTarget(block, blockId));
+            this.targets.put(cleanupTarget.storageId(), new ActiveTarget(cleanupTarget));
             return true;
         }
 
@@ -413,7 +588,8 @@ public final class SameBlockBreakManager {
                     SameBlockBreakConfig.MAX_SECTIONS_PER_TICK.getAsInt(),
                     SameBlockBreakConfig.MAX_SCANNED_BLOCKS_PER_TICK.getAsInt(),
                     SameBlockBreakConfig.MAX_BLOCK_CHANGES_PER_TICK.getAsInt(),
-                    SameBlockBreakConfig.SUPPORT_CHECKS_PER_TICK.getAsInt()
+                    SameBlockBreakConfig.SUPPORT_CHECKS_PER_TICK.getAsInt(),
+                    supportReservedBlockChanges()
             );
 
             List<ActiveTarget> workingTargets = this.workingTargets();
@@ -487,11 +663,11 @@ public final class SameBlockBreakManager {
             }
         }
 
-        private boolean removeTarget(String blockId) {
+        private boolean removeTarget(String targetId) {
             Iterator<ActiveTarget> iterator = this.targets.values().iterator();
             while (iterator.hasNext()) {
                 ActiveTarget target = iterator.next();
-                if (target.blockIdString().equals(blockId)) {
+                if (target.targetIdString().equals(targetId)) {
                     iterator.remove();
                     return true;
                 }
@@ -509,9 +685,9 @@ public final class SameBlockBreakManager {
             return this.targets.isEmpty();
         }
 
-        private void collectTargetBlocks(Set<Block> blocks) {
+        private void collectPreventedTargets(Set<Block> blocks, Set<Fluid> fluids) {
             for (ActiveTarget target : this.targets.values()) {
-                blocks.add(target.block());
+                target.collectPreventedTargets(blocks, fluids);
             }
         }
 
@@ -545,8 +721,7 @@ public final class SameBlockBreakManager {
     }
 
     private static final class ActiveTarget {
-        private final Block block;
-        private final Identifier blockId;
+        private final CleanupTarget target;
         private final List<SectionTask> tasks = new ArrayList<>();
         private final LongSet queuedSections = new LongOpenHashSet();
         private final LongSet completedSections = new LongOpenHashSet();
@@ -560,9 +735,8 @@ public final class SameBlockBreakManager {
         private boolean completionPending;
         private long activationSequence;
 
-        private ActiveTarget(Block block, Identifier blockId) {
-            this.block = block;
-            this.blockId = blockId;
+        private ActiveTarget(CleanupTarget target) {
+            this.target = target;
         }
 
         private void refresh(ServerLevel level, BlockPos origin, @Nullable Entity breaker, long activationSequence) {
@@ -580,7 +754,7 @@ public final class SameBlockBreakManager {
             this.activationSequence = activationSequence;
 
             if (breaker instanceof ServerPlayer player && SameBlockBreakConfig.SEND_START_MESSAGE.get()) {
-                player.sendSystemMessage(Component.translatable("message.minigame.sameblockbreak.started", this.block.getName()));
+                player.sendSystemMessage(Component.translatable("message.minigame.sameblockbreak.started", this.target.displayName()));
             }
 
             for (LevelChunk chunk : ChunkTracker.getLoadedChunks(level)) {
@@ -706,7 +880,9 @@ public final class SameBlockBreakManager {
             }
 
             boolean changed;
-            if (this.shouldUseNormalDestroy(task)) {
+            if (this.target.kind() == TargetKind.FLUID) {
+                changed = this.removeTargetFluid(level, pos, state);
+            } else if (this.shouldUseNormalDestroy(task)) {
                 boolean dropResources = this.remainingDropBlocks > 0;
                 changed = level.destroyBlock(pos, dropResources, this.breaker(level), SameBlockBreakConfig.NORMAL_DESTROY_UPDATE_LIMIT.getAsInt());
                 if (changed && dropResources) {
@@ -721,6 +897,33 @@ public final class SameBlockBreakManager {
             }
 
             return changed ? TaskResult.CHANGED : TaskResult.CONTINUE;
+        }
+
+        private boolean removeTargetFluid(ServerLevel level, BlockPos pos, BlockState state) {
+            BlockState replacement = this.fluidRemovalReplacement(level, pos, state);
+            if (replacement == null || replacement == state) {
+                return false;
+            }
+
+            return level.setBlock(
+                    pos,
+                    replacement,
+                    SameBlockBreakConfig.FAST_REMOVAL_FLAGS.getAsInt(),
+                    SameBlockBreakConfig.FAST_REMOVAL_UPDATE_LIMIT.getAsInt()
+            );
+        }
+
+        private @Nullable BlockState fluidRemovalReplacement(ServerLevel level, BlockPos pos, BlockState state) {
+            if (!this.matches(state)) {
+                return null;
+            }
+
+            if (state.hasProperty(BlockStateProperties.WATERLOGGED) && state.getValue(BlockStateProperties.WATERLOGGED)) {
+                BlockState dryState = state.setValue(BlockStateProperties.WATERLOGGED, false);
+                return dryState.canSurvive(level, pos) ? dryState : Blocks.AIR.defaultBlockState();
+            }
+
+            return Blocks.AIR.defaultBlockState();
         }
 
         private boolean shouldUseNormalDestroy(SectionTask task) {
@@ -779,7 +982,7 @@ public final class SameBlockBreakManager {
         }
 
         private boolean matches(BlockState state) {
-            return state.is(this.block);
+            return this.target.matches(state);
         }
 
         private void removeQueuedChunk(long chunkKey) {
@@ -800,9 +1003,9 @@ public final class SameBlockBreakManager {
             ServerPlayer player = level.getServer().getPlayerList().getPlayer(this.notifyPlayerId);
             if (player != null) {
                 if (SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()) {
-                    player.sendSystemMessage(Component.translatable("message.minigame.sameblockbreak.loaded_pass_complete_persistent", this.block.getName()));
+                    player.sendSystemMessage(Component.translatable("message.minigame.sameblockbreak.loaded_pass_complete_persistent", this.target.displayName()));
                 } else {
-                    player.sendSystemMessage(Component.translatable("message.minigame.sameblockbreak.loaded_pass_complete", this.block.getName()));
+                    player.sendSystemMessage(Component.translatable("message.minigame.sameblockbreak.loaded_pass_complete", this.target.displayName()));
                 }
             }
             this.completionPending = false;
@@ -820,12 +1023,13 @@ public final class SameBlockBreakManager {
             return this.activationSequence;
         }
 
-        private String blockIdString() {
-            return this.blockId.toString();
+        private String targetIdString() {
+            return this.target.storageId();
         }
 
-        private Block block() {
-            return this.block;
+        private void collectPreventedTargets(Set<Block> blocks, Set<Fluid> fluids) {
+            this.target.collectPreventedBlocks(blocks);
+            this.target.collectPreventedFluids(fluids);
         }
 
         private int queuedSectionCount() {
@@ -976,6 +1180,21 @@ public final class SameBlockBreakManager {
         return Math.min(chunk.getMaxSectionY(), chunk.getSectionYFromSectionIndex(highestFilledSectionIndex));
     }
 
+    private static int supportReservedBlockChanges() {
+        if (!SameBlockBreakConfig.RESERVE_BLOCK_CHANGES_FOR_SUPPORT_CLEANUP.get()
+                || !SameBlockBreakConfig.CLEANUP_UNSUPPORTED_BLOCKS.get()
+                || SameBlockBreakConfig.SUPPORT_CHECKS_PER_TICK.getAsInt() <= 0) {
+            return 0;
+        }
+
+        int maxBlockChanges = SameBlockBreakConfig.MAX_BLOCK_CHANGES_PER_TICK.getAsInt();
+        if (maxBlockChanges <= 1) {
+            return 0;
+        }
+
+        return Math.min(SameBlockBreakConfig.RESERVED_SUPPORT_BLOCK_CHANGES_PER_TICK.getAsInt(), maxBlockChanges - 1);
+    }
+
     private record SupportCheck(long pos, int depth) {
     }
 
@@ -999,16 +1218,18 @@ public final class SameBlockBreakManager {
         private int remainingScannedBlocks;
         private int remainingBlockChanges;
         private int remainingSupportChecks;
+        private final int reservedSupportBlockChanges;
         private int stepRemainingSections = Integer.MAX_VALUE;
         private int stepRemainingScannedBlocks = Integer.MAX_VALUE;
         private int stepRemainingBlockChanges = Integer.MAX_VALUE;
         private int stepRemainingSupportChecks = Integer.MAX_VALUE;
 
-        private TickBudget(int remainingSections, int remainingScannedBlocks, int remainingBlockChanges, int remainingSupportChecks) {
+        private TickBudget(int remainingSections, int remainingScannedBlocks, int remainingBlockChanges, int remainingSupportChecks, int reservedSupportBlockChanges) {
             this.remainingSections = remainingSections;
             this.remainingScannedBlocks = remainingScannedBlocks;
             this.remainingBlockChanges = remainingBlockChanges;
             this.remainingSupportChecks = remainingSupportChecks;
+            this.reservedSupportBlockChanges = reservedSupportBlockChanges;
         }
 
         private void beginStep(int sections, int scannedBlocks, int blockChanges, int supportChecks) {
@@ -1030,7 +1251,7 @@ public final class SameBlockBreakManager {
                     && this.stepRemainingSections > 0
                     && this.remainingScannedBlocks > 0
                     && this.stepRemainingScannedBlocks > 0
-                    && this.remainingBlockChanges > 0
+                    && this.remainingBlockChanges > this.reservedSupportBlockChanges
                     && this.stepRemainingBlockChanges > 0;
         }
 
@@ -1047,7 +1268,7 @@ public final class SameBlockBreakManager {
         }
 
         private boolean hasAnyBudget() {
-            return this.hasBlockScanBudget() || this.hasSupportBudget();
+            return this.hasBlockScanBudget() || this.hasSupportBudget() && this.hasChangeBudget();
         }
 
         private void completedSection() {

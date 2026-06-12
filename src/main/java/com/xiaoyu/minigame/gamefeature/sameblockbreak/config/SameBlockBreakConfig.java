@@ -11,6 +11,7 @@ public final class SameBlockBreakConfig {
     public static final ModConfigSpec.BooleanValue ENABLED;
     public static final ModConfigSpec.BooleanValue TRIGGER_PLAYER_BREAKS;
     public static final ModConfigSpec.BooleanValue TRIGGER_LIVING_ENTITY_BREAKS;
+    public static final ModConfigSpec.BooleanValue TRIGGER_BUCKET_FLUID_PICKUPS;
     public static final ModConfigSpec.BooleanValue PERSIST_CLEANUP_RULES;
     public static final ModConfigSpec.BooleanValue PREVENT_NON_ENTITY_PLACEMENT_WITH_MIXIN;
     public static final ModConfigSpec.BooleanValue SEND_START_MESSAGE;
@@ -26,6 +27,8 @@ public final class SameBlockBreakConfig {
     public static final ModConfigSpec.IntValue FAST_REMOVAL_FLAGS;
     public static final ModConfigSpec.IntValue FAST_REMOVAL_UPDATE_LIMIT;
     public static final ModConfigSpec.BooleanValue CLEANUP_UNSUPPORTED_BLOCKS;
+    public static final ModConfigSpec.BooleanValue RESERVE_BLOCK_CHANGES_FOR_SUPPORT_CLEANUP;
+    public static final ModConfigSpec.IntValue RESERVED_SUPPORT_BLOCK_CHANGES_PER_TICK;
     public static final ModConfigSpec.IntValue SUPPORT_CHECKS_PER_TICK;
     public static final ModConfigSpec.IntValue SUPPORT_CASCADE_DEPTH;
     public static final ModConfigSpec.ConfigValue<List<? extends String>> BLOCK_DENYLIST;
@@ -46,6 +49,13 @@ public final class SameBlockBreakConfig {
         TRIGGER_LIVING_ENTITY_BREAKS = builder
                 .comment("Starts cleanup when living entities such as withers, ender dragons, or zombies destroy blocks.")
                 .define("triggerLivingEntityBreaks", true);
+
+        TRIGGER_BUCKET_FLUID_PICKUPS = builder
+                .comment(
+                        "Starts same-fluid cleanup when a player successfully picks up a fluid with an empty bucket.",
+                        "Water and lava cleanup matches source blocks, flowing fluids, waterlogged blocks, and blocks whose state contains that fluid."
+                )
+                .define("triggerBucketFluidPickups", true);
 
         PERSIST_CLEANUP_RULES = builder
                 .comment(
@@ -155,6 +165,21 @@ public final class SameBlockBreakConfig {
         CLEANUP_UNSUPPORTED_BLOCKS = builder
                 .comment("After fast removal, checks nearby blocks and removes blocks that can no longer survive, such as torches or vegetation.")
                 .define("cleanupUnsupportedBlocks", true);
+
+        RESERVE_BLOCK_CHANGES_FOR_SUPPORT_CLEANUP = builder
+                .comment(
+                        "Reserves part of maxBlockChangesPerTick for unsupported-block cleanup.",
+                        "This makes dependent blocks such as lily pads disappear sooner during large fluid cleanups, but lowers the main cleanup throughput.",
+                        "Default is false to keep maximum cleanup speed."
+                )
+                .define("reserveBlockChangesForSupportCleanup", false);
+
+        RESERVED_SUPPORT_BLOCK_CHANGES_PER_TICK = builder
+                .comment(
+                        "Block-change budget reserved for unsupported-block cleanup when reserveBlockChangesForSupportCleanup is enabled.",
+                        "The actual reserve is capped below maxBlockChangesPerTick so the main cleanup can still make progress."
+                )
+                .defineInRange("reservedSupportBlockChangesPerTick", 512, 0, Integer.MAX_VALUE);
 
         SUPPORT_CHECKS_PER_TICK = builder
                 .comment("Maximum number of support-cleanup checks per level tick.")
