@@ -9,6 +9,8 @@
   "command.minigame.sameblockbreak.forget.not_found": "没有找到清理规则: %s",
   "command.minigame.sameblockbreak.clear.success": "已清除 %d 条同类方块清理规则",
   "message.minigame.sameblockbreak.started": "已开始清理世界内已加载的所有 %s",
+  "message.minigame.sameblockbreak.entity_destroyed": "%s 破坏了 %s。",
+  "message.minigame.sameblockbreak.entity_bucket_picked_up": "%s 用桶收起了 %s。",
   "message.minigame.sameblockbreak.loaded_pass_complete": "已完成当前已加载区块内的 %s 清理",
   "message.minigame.sameblockbreak.loaded_pass_complete_persistent": "已完成当前已加载区块内的 %s 清理；之后加载的区块会继续自动补扫",
   "message.minigame.sameblockbreak.max_active": "同类方块清理规则已达到上限: %d"

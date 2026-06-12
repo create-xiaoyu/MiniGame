@@ -4,6 +4,7 @@ import com.xiaoyu.minigame.gamefeature.common.chunk.ChunkTracker;
 import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfig;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
@@ -64,7 +65,7 @@ public final class SameBlockBreakManager {
             return;
         }
 
-        startTargetFromTrigger(level, target, origin, breaker);
+        startTargetFromTrigger(level, target, origin, breaker, StartMessageMode.BLOCK_BREAK_BROADCAST);
     }
 
     public static void startFromBucketPickup(ServerLevel level, BlockPos origin, BlockState pickedState, @Nullable Entity picker) {
@@ -77,12 +78,18 @@ public final class SameBlockBreakManager {
             return;
         }
 
-        startTargetFromTrigger(level, target, origin, picker);
+        startTargetFromTrigger(level, target, origin, picker, StartMessageMode.BUCKET_PICKUP_BROADCAST);
     }
 
-    private static void startTargetFromTrigger(ServerLevel level, CleanupTarget target, BlockPos origin, @Nullable Entity breaker) {
+    private static void startTargetFromTrigger(
+            ServerLevel level,
+            CleanupTarget target,
+            BlockPos origin,
+            @Nullable Entity breaker,
+            StartMessageMode startMessageMode
+    ) {
         LevelState levelState = stateFor(level);
-        ActivationResult activationResult = levelState.activateFromTrigger(level, target, origin.immutable(), breaker);
+        ActivationResult activationResult = levelState.activateFromTrigger(level, target, origin.immutable(), breaker, startMessageMode);
         if (activationResult == ActivationResult.ALREADY_RUNNING) {
             return;
         }
@@ -110,7 +117,7 @@ public final class SameBlockBreakManager {
         }
 
         LevelState levelState = stateFor(level);
-        ActivationResult activationResult = levelState.activateFromTrigger(level, target, origin.immutable(), sourceEntity);
+        ActivationResult activationResult = levelState.activateFromTrigger(level, target, origin.immutable(), sourceEntity, StartMessageMode.DIRECT_PLAYER);
         if (activationResult == ActivationResult.ALREADY_RUNNING) {
             return StartResult.ALREADY_RUNNING;
         }
@@ -542,7 +549,13 @@ public final class SameBlockBreakManager {
             }
         }
 
-        private ActivationResult activateFromTrigger(ServerLevel level, CleanupTarget cleanupTarget, BlockPos origin, @Nullable Entity breaker) {
+        private ActivationResult activateFromTrigger(
+                ServerLevel level,
+                CleanupTarget cleanupTarget,
+                BlockPos origin,
+                @Nullable Entity breaker,
+                StartMessageMode startMessageMode
+        ) {
             ActiveTarget target = this.targets.get(cleanupTarget.storageId());
             if (target != null && target.hasWork()) {
                 return ActivationResult.ALREADY_RUNNING;
@@ -557,7 +570,7 @@ public final class SameBlockBreakManager {
                 this.targets.put(cleanupTarget.storageId(), target);
             }
 
-            target.refresh(level, origin, breaker, ++this.nextActivationSequence);
+            target.refresh(level, origin, breaker, ++this.nextActivationSequence, startMessageMode);
             return ActivationResult.STARTED;
         }
 
@@ -739,7 +752,13 @@ public final class SameBlockBreakManager {
             this.target = target;
         }
 
-        private void refresh(ServerLevel level, BlockPos origin, @Nullable Entity breaker, long activationSequence) {
+        private void refresh(
+                ServerLevel level,
+                BlockPos origin,
+                @Nullable Entity breaker,
+                long activationSequence,
+                StartMessageMode startMessageMode
+        ) {
             this.tasks.clear();
             this.queuedSections.clear();
             this.completedSections.clear();
@@ -753,7 +772,16 @@ public final class SameBlockBreakManager {
             this.notifyPlayerId = this.breakerPlayerId;
             this.activationSequence = activationSequence;
 
-            if (breaker instanceof ServerPlayer player && SameBlockBreakConfig.SEND_START_MESSAGE.get()) {
+            if (SameBlockBreakConfig.SEND_START_MESSAGE.get() && startMessageMode != StartMessageMode.DIRECT_PLAYER && breaker != null) {
+                level.getServer().getPlayerList().broadcastSystemMessage(
+                        Component.translatable(
+                                startMessageMode.translationKey(),
+                                breaker.getDisplayName(),
+                                this.target.displayName()
+                        ).withStyle(ChatFormatting.RED),
+                        false
+                );
+            } else if (breaker instanceof ServerPlayer player && SameBlockBreakConfig.SEND_START_MESSAGE.get()) {
                 player.sendSystemMessage(Component.translatable("message.minigame.sameblockbreak.started", this.target.displayName()));
             }
 
@@ -1211,6 +1239,22 @@ public final class SameBlockBreakManager {
         STARTED,
         ALREADY_RUNNING,
         MAX_ACTIVE_TARGETS
+    }
+
+    private enum StartMessageMode {
+        DIRECT_PLAYER("message.minigame.sameblockbreak.started"),
+        BLOCK_BREAK_BROADCAST("message.minigame.sameblockbreak.entity_destroyed"),
+        BUCKET_PICKUP_BROADCAST("message.minigame.sameblockbreak.entity_bucket_picked_up");
+
+        private final String translationKey;
+
+        StartMessageMode(String translationKey) {
+            this.translationKey = translationKey;
+        }
+
+        private String translationKey() {
+            return this.translationKey;
+        }
     }
 
     private static final class TickBudget {

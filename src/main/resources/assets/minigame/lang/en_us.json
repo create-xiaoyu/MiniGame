@@ -9,6 +9,8 @@
   "command.minigame.sameblockbreak.forget.not_found": "No cleanup rule found: %s",
   "command.minigame.sameblockbreak.clear.success": "Cleared %d same-block cleanup rules",
   "message.minigame.sameblockbreak.started": "Started cleaning loaded chunks for every %s",
+  "message.minigame.sameblockbreak.entity_destroyed": "%s broke %s.",
+  "message.minigame.sameblockbreak.entity_bucket_picked_up": "%s picked up %s with a bucket.",
   "message.minigame.sameblockbreak.loaded_pass_complete": "Finished cleaning %s in currently loaded chunks",
   "message.minigame.sameblockbreak.loaded_pass_complete_persistent": "Finished cleaning %s in currently loaded chunks; future loaded chunks will be scanned automatically",
   "message.minigame.sameblockbreak.max_active": "Same-block cleanup rule limit reached: %d"
