@@ -9,6 +9,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -24,6 +25,7 @@ import org.jspecify.annotations.Nullable;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -35,6 +37,11 @@ import java.util.UUID;
 public final class SameBlockBreakManager {
     private static final Map<ServerLevel, LevelState> LEVEL_STATES = new IdentityHashMap<>();
     private static final ThreadLocal<Integer> ENTITY_PLACEMENT_BYPASS_DEPTH = ThreadLocal.withInitial(() -> 0);
+    private static volatile Set<String> persistedPreventedBlockIds = Set.of();
+    private static volatile Set<Block> persistedPreventedBlocks = Set.of();
+    private static volatile Set<Block> activePreventedBlocks = Set.of();
+    private static volatile boolean globalRulesLoaded;
+    private static volatile long persistedRulesVersion;
 
     private SameBlockBreakManager() {
     }
@@ -60,9 +67,10 @@ public final class SameBlockBreakManager {
             }
             return;
         }
+        updateActivePreventionSet();
 
         if (SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()) {
-            savedData(level).addTarget(blockId);
+            addPersistedRule(level.getServer(), blockId);
         }
     }
 
@@ -76,9 +84,10 @@ public final class SameBlockBreakManager {
         if (!levelState.activateFromTrigger(level, resolvedBlock.block(), resolvedBlock.id(), origin.immutable(), sourceEntity)) {
             return false;
         }
+        updateActivePreventionSet();
 
         if (SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()) {
-            savedData(level).addTarget(resolvedBlock.id());
+            addPersistedRule(level.getServer(), resolvedBlock.id());
         }
 
         return true;
@@ -90,20 +99,26 @@ public final class SameBlockBreakManager {
             return false;
         }
 
-        boolean changed = savedData(level).removeTarget(blockId.toString());
-        LevelState levelState = LEVEL_STATES.get(level);
-        if (levelState != null) {
+        MinecraftServer server = level.getServer();
+        ensureGlobalRulesLoaded(server);
+        boolean changed = savedData(server).removeTarget(blockId.toString());
+        for (LevelState levelState : LEVEL_STATES.values()) {
             changed |= levelState.removeTarget(blockId.toString());
         }
+        replacePersistedPreventionSet(savedData(server).targetBlockIds());
+        updateActivePreventionSet();
         return changed;
     }
 
     public static int clearRules(ServerLevel level) {
-        int removed = savedData(level).clearTargets();
-        LevelState levelState = LEVEL_STATES.get(level);
-        if (levelState != null) {
+        MinecraftServer server = level.getServer();
+        ensureGlobalRulesLoaded(server);
+        int removed = savedData(server).clearTargets();
+        for (LevelState levelState : LEVEL_STATES.values()) {
             removed += levelState.clearTargets();
         }
+        replacePersistedPreventionSet(Set.of());
+        updateActivePreventionSet();
         return removed;
     }
 
@@ -124,6 +139,11 @@ public final class SameBlockBreakManager {
     }
 
     public static boolean shouldPreventNonEntityPlacement(ServerLevel level, BlockState newState) {
+        ensureGlobalRulesLoaded(level.getServer());
+        return shouldPreventNonEntityPlacement(newState);
+    }
+
+    public static boolean shouldPreventNonEntityPlacement(BlockState newState) {
         if (!SameBlockBreakConfig.ENABLED.get()
                 || !SameBlockBreakConfig.PREVENT_NON_ENTITY_PLACEMENT_WITH_MIXIN.get()
                 || newState.isAir()
@@ -132,14 +152,7 @@ public final class SameBlockBreakManager {
         }
 
         Block block = newState.getBlock();
-        Identifier blockId = BuiltInRegistries.BLOCK.getKey(block);
-        if (blockId == null || isDenylisted(blockId)) {
-            return false;
-        }
-
-        LevelState levelState = stateFor(level);
-        levelState.loadPersistedTargets(level);
-        return levelState.hasTarget(block);
+        return persistedPreventedBlocks.contains(block) || activePreventedBlocks.contains(block);
     }
 
     public static void beginEntityPlacementBypass() {
@@ -164,28 +177,109 @@ public final class SameBlockBreakManager {
 
     public static void onLevelUnload(ServerLevel level) {
         LEVEL_STATES.remove(level);
+        updateActivePreventionSet();
     }
 
     public static SameBlockBreakStatus status(ServerLevel level) {
+        ensureGlobalRulesLoaded(level.getServer());
         LevelState levelState = LEVEL_STATES.get(level);
         int activeTargets = levelState == null ? 0 : levelState.activeTargetCount();
         int queuedSections = levelState == null ? 0 : levelState.queuedSectionCount();
         int completedSections = levelState == null ? 0 : levelState.completedSectionCount();
         int supportChecks = levelState == null ? 0 : levelState.supportCheckCount();
-        int persistedRules = savedData(level).targetCount();
+        int persistedRules = savedData(level.getServer()).targetCount();
         return new SameBlockBreakStatus(activeTargets, queuedSections, completedSections, supportChecks, persistedRules);
+    }
+
+    public static void loadGlobalRules(MinecraftServer server) {
+        if (!SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()) {
+            replacePersistedPreventionSet(Set.of());
+            globalRulesLoaded = false;
+            return;
+        }
+
+        SameBlockBreakSavedData globalData = savedData(server);
+        mergeLegacyLevelSavedData(server, globalData);
+        replacePersistedPreventionSet(globalData.targetBlockIds());
+        globalRulesLoaded = true;
     }
 
     public static void clearAll() {
         LEVEL_STATES.clear();
+        replacePersistedPreventionSet(Set.of());
+        activePreventedBlocks = Set.of();
+        globalRulesLoaded = false;
     }
 
     private static LevelState stateFor(ServerLevel level) {
         return LEVEL_STATES.computeIfAbsent(level, ignored -> new LevelState());
     }
 
-    private static SameBlockBreakSavedData savedData(ServerLevel level) {
-        return level.getDataStorage().computeIfAbsent(SameBlockBreakSavedData.TYPE);
+    private static SameBlockBreakSavedData savedData(MinecraftServer server) {
+        return server.getDataStorage().computeIfAbsent(SameBlockBreakSavedData.TYPE);
+    }
+
+    private static void ensureGlobalRulesLoaded(MinecraftServer server) {
+        if (!SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()) {
+            if (!persistedPreventedBlockIds.isEmpty()) {
+                replacePersistedPreventionSet(Set.of());
+            }
+            globalRulesLoaded = false;
+            return;
+        }
+
+        if (!globalRulesLoaded) {
+            loadGlobalRules(server);
+        }
+    }
+
+    private static void addPersistedRule(MinecraftServer server, Identifier blockId) {
+        ensureGlobalRulesLoaded(server);
+        if (savedData(server).addTarget(blockId)) {
+            HashSet<String> updated = new HashSet<>(persistedPreventedBlockIds);
+            updated.add(blockId.toString());
+            replacePersistedPreventionSet(updated);
+        }
+    }
+
+    private static void mergeLegacyLevelSavedData(MinecraftServer server, SameBlockBreakSavedData globalData) {
+        for (ServerLevel level : server.getAllLevels()) {
+            SameBlockBreakSavedData legacyData = level.getDataStorage().get(SameBlockBreakSavedData.TYPE);
+            if (legacyData == null || legacyData == globalData) {
+                continue;
+            }
+
+            for (String targetBlockId : legacyData.targetBlockIds()) {
+                ResolvedBlock resolvedBlock = resolveBlock(targetBlockId);
+                if (resolvedBlock != null && !isDenylisted(resolvedBlock.id())) {
+                    globalData.addTarget(resolvedBlock.id());
+                }
+            }
+        }
+    }
+
+    private static void replacePersistedPreventionSet(Set<String> blockIds) {
+        HashSet<String> validBlockIds = new HashSet<>();
+        HashSet<Block> validBlocks = new HashSet<>();
+        for (String blockId : blockIds) {
+            ResolvedBlock resolvedBlock = resolveBlock(blockId);
+            if (resolvedBlock != null && !isDenylisted(resolvedBlock.id())) {
+                validBlockIds.add(resolvedBlock.id().toString());
+                validBlocks.add(resolvedBlock.block());
+            }
+        }
+
+        persistedPreventedBlockIds = Set.copyOf(validBlockIds);
+        persistedPreventedBlocks = Set.copyOf(validBlocks);
+        persistedRulesVersion++;
+    }
+
+    private static void updateActivePreventionSet() {
+        HashSet<Block> blocks = new HashSet<>();
+        for (LevelState levelState : LEVEL_STATES.values()) {
+            levelState.collectTargetBlocks(blocks);
+        }
+        activePreventedBlocks = Set.copyOf(blocks);
     }
 
     private static @Nullable ResolvedBlock resolveBlock(String blockIdText) {
@@ -230,20 +324,30 @@ public final class SameBlockBreakManager {
 
     private static final class LevelState {
         private final Map<Block, ActiveTarget> targets = new IdentityHashMap<>();
-        private boolean persistedTargetsLoaded;
+        private long loadedPersistedRulesVersion = -1L;
         private long nextActivationSequence;
 
         private void loadPersistedTargets(ServerLevel level) {
-            if (this.persistedTargetsLoaded || !SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()) {
+            if (!SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()) {
                 return;
             }
 
-            this.persistedTargetsLoaded = true;
-            for (String targetBlockId : savedData(level).targetBlockIds()) {
+            ensureGlobalRulesLoaded(level.getServer());
+            long currentVersion = persistedRulesVersion;
+            if (this.loadedPersistedRulesVersion == currentVersion) {
+                return;
+            }
+
+            boolean changed = false;
+            this.loadedPersistedRulesVersion = currentVersion;
+            for (String targetBlockId : persistedPreventedBlockIds) {
                 ResolvedBlock resolvedBlock = resolveBlock(targetBlockId);
                 if (resolvedBlock != null && !isDenylisted(resolvedBlock.id())) {
-                    this.activatePersisted(resolvedBlock.block(), resolvedBlock.id());
+                    changed |= this.activatePersisted(resolvedBlock.block(), resolvedBlock.id());
                 }
+            }
+            if (changed) {
+                updateActivePreventionSet();
             }
         }
 
@@ -262,12 +366,13 @@ public final class SameBlockBreakManager {
             return true;
         }
 
-        private void activatePersisted(Block block, Identifier blockId) {
+        private boolean activatePersisted(Block block, Identifier blockId) {
             if (this.targets.containsKey(block) || this.targets.size() >= SameBlockBreakConfig.MAX_ACTIVE_TARGETS.getAsInt()) {
-                return;
+                return false;
             }
 
             this.targets.put(block, new ActiveTarget(block, blockId));
+            return true;
         }
 
         private void enqueueLoadedChunks(ServerLevel level) {
@@ -348,6 +453,7 @@ public final class SameBlockBreakManager {
                     iterator.remove();
                 }
             }
+            updateActivePreventionSet();
         }
 
         private void removeQueuedChunk(long chunkKey) {
@@ -378,8 +484,10 @@ public final class SameBlockBreakManager {
             return this.targets.isEmpty();
         }
 
-        private boolean hasTarget(Block block) {
-            return this.targets.containsKey(block);
+        private void collectTargetBlocks(Set<Block> blocks) {
+            for (ActiveTarget target : this.targets.values()) {
+                blocks.add(target.block());
+            }
         }
 
         private int activeTargetCount() {
@@ -679,6 +787,10 @@ public final class SameBlockBreakManager {
 
         private String blockIdString() {
             return this.blockId.toString();
+        }
+
+        private Block block() {
+            return this.block;
         }
 
         private int queuedSectionCount() {

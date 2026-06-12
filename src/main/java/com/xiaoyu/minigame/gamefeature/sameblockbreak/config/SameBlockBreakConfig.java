@@ -56,9 +56,9 @@ public final class SameBlockBreakConfig {
 
         PREVENT_NON_ENTITY_PLACEMENT_WITH_MIXIN = builder
                 .comment(
-                        "Uses a mixin on Level#setBlock to prevent queued or persistent cleanup-target blocks from being placed by non-entity world logic.",
+                        "Uses mixins on Level#setBlock, chunk worldgen writes, and direct chunk-section writes to prevent queued or persistent cleanup-target blocks from being placed by non-entity world logic.",
                         "Player/item placement through NeoForge's placement hook is allowed.",
-                        "Default is false because this touches a very hot vanilla path and may affect other mods that set blocks directly."
+                        "Default is false because this touches hot vanilla and world-generation paths and may affect other mods that set blocks directly."
                 )
                 .define("preventNonEntityPlacementWithMixin", false);
 

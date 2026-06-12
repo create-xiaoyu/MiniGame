@@ -4,7 +4,11 @@
   "compatibilityLevel": "JAVA_25",
   "mixins": [
     "CommonHooksMixin",
-    "LevelMixin"
+    "ImposterProtoChunkMixin",
+    "LevelChunkSectionMixin",
+    "LevelMixin",
+    "ProtoChunkMixin",
+    "WorldGenRegionMixin"
   ],
   "injectors": {
     "defaultRequire": 1

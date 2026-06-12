@@ -5,6 +5,7 @@ import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfi
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 
 public final class SameBlockBreakFeature {
@@ -13,8 +14,13 @@ public final class SameBlockBreakFeature {
         modContainer.registerConfig(ModConfig.Type.SERVER, SameBlockBreakConfig.SPEC, "minigame/sameblockbreak.toml");
 
         NeoForge.EVENT_BUS.addListener(SameBlockBreakFeature::onServerStopped);
+        NeoForge.EVENT_BUS.addListener(SameBlockBreakFeature::onServerStarted);
         NeoForge.EVENT_BUS.register(SameBlockBreakEvents.class);
         NeoForge.EVENT_BUS.register(SameBlockBreakCommands.class);
+    }
+
+    private static void onServerStarted(ServerStartedEvent event) {
+        SameBlockBreakManager.loadGlobalRules(event.getServer());
     }
 
     private static void onServerStopped(ServerStoppedEvent event) {
