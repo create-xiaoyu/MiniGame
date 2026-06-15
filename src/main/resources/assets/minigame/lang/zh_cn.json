@@ -1,5 +1,7 @@
 {
   "command.minigame.minigame.debug.getLoadedChunks": "已加载区块数量: %d",
+  "command.minigame.chunkplaceblock.status": "区块同位放置同步: 已加载区块 %d, 持久规则 %d, 已处理区块 %d, 待确认桶放置 %d",
+  "command.minigame.chunkplaceblock.clear.success": "已清除 %d 条区块同位放置同步规则",
   "command.minigame.sameblockbreak.status": "同类方块清理: 活跃规则 %d, 排队小区块 %d, 已完成小区块 %d, 依附检查 %d, 持久规则 %d",
   "command.minigame.sameblockbreak.start.success": "已开始清理方块: %s",
   "command.minigame.sameblockbreak.start.already_running": "方块: %s 的清理队列已在运行中",
@@ -13,5 +15,9 @@
   "message.minigame.sameblockbreak.entity_bucket_picked_up": "%s 用桶收起了 %s。",
   "message.minigame.sameblockbreak.loaded_pass_complete": "已完成当前已加载区块内的 %s 清理",
   "message.minigame.sameblockbreak.loaded_pass_complete_persistent": "已完成当前已加载区块内的 %s 清理；之后加载的区块会继续自动补扫",
-  "message.minigame.sameblockbreak.max_active": "同类方块清理规则已达到上限: %d"
+  "message.minigame.sameblockbreak.max_active": "同类方块清理规则已达到上限: %d",
+  "message.minigame.chunkplaceblock.placed": "已将 %s 同步放置到 %d 个方块位置，遍历 %d 个已加载区块",
+  "message.minigame.chunkplaceblock.placed_limited": "已将 %s 同步放置到 %d 个方块位置，遍历 %d 个已加载区块；本次因配置上限提前停止",
+  "message.minigame.chunkplaceblock.broken": "已将 %s 的破坏同步到 %d 个方块位置，遍历 %d 个已加载区块",
+  "message.minigame.chunkplaceblock.broken_limited": "已将 %s 的破坏同步到 %d 个方块位置，遍历 %d 个已加载区块；本次因配置上限提前停止"
 }
