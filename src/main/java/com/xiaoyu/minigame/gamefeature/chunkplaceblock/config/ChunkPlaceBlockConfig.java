@@ -16,7 +16,6 @@ public final class ChunkPlaceBlockConfig {
     public static final ModConfigSpec.BooleanValue CHECK_PLACEMENT_SURVIVAL;
     public static final ModConfigSpec.BooleanValue COPY_BLOCK_ENTITY_DATA;
     public static final ModConfigSpec.BooleanValue PERSIST_PLACEMENT_RULES;
-    public static final ModConfigSpec.BooleanValue DISABLE_PERSISTENT_PLACEMENT_WHEN_SAME_BLOCK_BREAK_ENABLED;
     public static final ModConfigSpec.BooleanValue SYNC_BREAKS;
     public static final ModConfigSpec.BooleanValue SYNC_BREAKS_ONLY_WHEN_SAME_BLOCK_BREAK_DISABLED;
     public static final ModConfigSpec.BooleanValue TRIGGER_PLAYER_BREAKS;
@@ -54,14 +53,6 @@ public final class ChunkPlaceBlockConfig {
                         "Disable this if you only want to affect chunks that are loaded at the moment of placement."
                 )
                 .define("persistPlacementRules", true);
-
-        DISABLE_PERSISTENT_PLACEMENT_WHEN_SAME_BLOCK_BREAK_ENABLED = builder
-                .comment(
-                        "Disables chunkplaceblock persistent placement catch-up while sameblockbreak is enabled.",
-                        "When enabled, new persistent placement rules are not stored and existing rules are not applied until sameblockbreak is disabled.",
-                        "Immediate mirrored placement still runs normally."
-                )
-                .define("disablePersistentPlacementWhenSameBlockBreakEnabled", true);
 
         DEBUG_LOG_SKIPPED_TARGETS = builder
                 .comment("Logs individual skipped placement and break targets. This can be noisy in large worlds.")

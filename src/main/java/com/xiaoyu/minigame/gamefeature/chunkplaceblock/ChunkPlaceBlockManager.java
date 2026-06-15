@@ -217,20 +217,10 @@ public final class ChunkPlaceBlockManager {
 
         ChunkPlaceBlockSavedData data = existingSavedData(level);
         if (data == null || data.ruleCount() == 0) {
-            if (levelState != null) {
-                levelState.clearPersistentPlacementPausedLog();
-            }
             return;
         }
 
-        LevelState persistentLevelState = stateFor(level);
-        if (isPersistentPlacementDisabledBySameBlockBreak()) {
-            persistentLevelState.logPersistentPlacementPaused(level, data.ruleCount());
-            return;
-        }
-
-        persistentLevelState.clearPersistentPlacementPausedLog();
-        persistentLevelState.processPersistentRules(level, data.rules());
+        stateFor(level).processPersistentRules(level, data.rules());
     }
 
     public static void onChunkUnload(ServerLevel level, long chunkKey) {
@@ -305,14 +295,6 @@ public final class ChunkPlaceBlockManager {
 
     private static int upsertPersistentRules(ServerLevel level, List<MirroredBlock> blocks) {
         if (!ChunkPlaceBlockConfig.PERSIST_PLACEMENT_RULES.get()) {
-            return 0;
-        }
-        if (isPersistentPlacementDisabledBySameBlockBreak()) {
-            LOGGER.debug(
-                    "Chunk-place skipped storing {} persistent placement rule(s) in {} because sameblockbreak is enabled",
-                    blocks.size(),
-                    level.dimension()
-            );
             return 0;
         }
 
@@ -629,11 +611,6 @@ public final class ChunkPlaceBlockManager {
         return ChunkPlaceBlockConfig.PREVENT_NEIGHBOR_CHUNK_LOADING.get() ? 0 : configuredLimit;
     }
 
-    private static boolean isPersistentPlacementDisabledBySameBlockBreak() {
-        return ChunkPlaceBlockConfig.DISABLE_PERSISTENT_PLACEMENT_WHEN_SAME_BLOCK_BREAK_ENABLED.get()
-                && SameBlockBreakConfig.ENABLED.get();
-    }
-
     private static boolean isCurrentLoadedChunk(ServerLevel level, LevelChunk chunk) {
         return level.getChunkSource().getChunkNow(chunk.getPos().x(), chunk.getPos().z()) == chunk;
     }
@@ -690,7 +667,6 @@ public final class ChunkPlaceBlockManager {
     private static final class LevelState {
         private final List<PendingBucketPlacement> pendingBuckets = new ArrayList<>();
         private final LongSet processedPersistentChunks = new LongOpenHashSet();
-        private boolean loggedPersistentPlacementPaused;
 
         private void addPendingBucket(PendingBucketPlacement candidate) {
             this.pendingBuckets.removeIf(existing -> existing.sameTarget(candidate));
@@ -780,26 +756,8 @@ public final class ChunkPlaceBlockManager {
             }
         }
 
-        private void logPersistentPlacementPaused(ServerLevel level, int ruleCount) {
-            if (this.loggedPersistentPlacementPaused) {
-                return;
-            }
-
-            LOGGER.debug(
-                    "Chunk-place paused persistent placement catch-up in {} because sameblockbreak is enabled (rules={})",
-                    level.dimension(),
-                    ruleCount
-            );
-            this.loggedPersistentPlacementPaused = true;
-        }
-
-        private void clearPersistentPlacementPausedLog() {
-            this.loggedPersistentPlacementPaused = false;
-        }
-
         private void invalidatePersistentChunks() {
             this.processedPersistentChunks.clear();
-            this.loggedPersistentPlacementPaused = false;
         }
     }
 
