@@ -23,6 +23,10 @@ public abstract class LevelChunkSectionMixin {
             boolean checkThreading,
             CallbackInfoReturnable<BlockState> cir
     ) {
+        if (SameBlockBreakManager.isLevelSetBlockWriteActive()) {
+            return;
+        }
+
         if (SameBlockBreakManager.shouldPreventNonEntityPlacement(blockState)) {
             cir.setReturnValue(((LevelChunkSection) (Object) this).getBlockState(sectionX, sectionY, sectionZ));
         }

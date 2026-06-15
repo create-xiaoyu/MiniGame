@@ -44,6 +44,7 @@ public final class SameBlockBreakManager {
     private static final String FLUID_TARGET_PREFIX = "fluid:";
     private static final Map<ServerLevel, LevelState> LEVEL_STATES = new IdentityHashMap<>();
     private static final ThreadLocal<Integer> ENTITY_PLACEMENT_BYPASS_DEPTH = ThreadLocal.withInitial(() -> 0);
+    private static final ThreadLocal<Integer> LEVEL_SET_BLOCK_WRITE_DEPTH = ThreadLocal.withInitial(() -> 0);
     private static volatile Set<String> persistedPreventedBlockIds = Set.of();
     private static volatile Set<Block> persistedPreventedBlocks = Set.of();
     private static volatile Set<Fluid> persistedPreventedFluids = Set.of();
@@ -215,6 +216,23 @@ public final class SameBlockBreakManager {
         } else {
             ENTITY_PLACEMENT_BYPASS_DEPTH.set(depth);
         }
+    }
+
+    public static void beginLevelSetBlockWrite() {
+        LEVEL_SET_BLOCK_WRITE_DEPTH.set(LEVEL_SET_BLOCK_WRITE_DEPTH.get() + 1);
+    }
+
+    public static void endLevelSetBlockWrite() {
+        int depth = LEVEL_SET_BLOCK_WRITE_DEPTH.get() - 1;
+        if (depth <= 0) {
+            LEVEL_SET_BLOCK_WRITE_DEPTH.remove();
+        } else {
+            LEVEL_SET_BLOCK_WRITE_DEPTH.set(depth);
+        }
+    }
+
+    public static boolean isLevelSetBlockWriteActive() {
+        return LEVEL_SET_BLOCK_WRITE_DEPTH.get() > 0;
     }
 
     public static void onChunkUnload(ServerLevel level, long chunkKey) {

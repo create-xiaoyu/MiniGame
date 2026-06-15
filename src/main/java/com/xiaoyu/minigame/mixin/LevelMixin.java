@@ -31,13 +31,29 @@ public abstract class LevelMixin {
             int updateLimit,
             CallbackInfoReturnable<Boolean> cir
     ) {
-        if (this.captureBlockSnapshots || this.restoringBlockSnapshots) {
+        Level self = (Level) (Object) this;
+        if (self instanceof ServerLevel level
+                && !this.captureBlockSnapshots
+                && !this.restoringBlockSnapshots
+                && SameBlockBreakManager.shouldPreventNonEntityPlacement(level, blockState)) {
+            cir.setReturnValue(false);
             return;
         }
 
-        Level self = (Level) (Object) this;
-        if (self instanceof ServerLevel level && SameBlockBreakManager.shouldPreventNonEntityPlacement(level, blockState)) {
-            cir.setReturnValue(false);
-        }
+        SameBlockBreakManager.beginLevelSetBlockWrite();
+    }
+
+    @Inject(
+            method = "setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)Z",
+            at = @At("RETURN")
+    )
+    private void minigame$endSameBlockBreakLevelSetBlockWrite(
+            BlockPos pos,
+            BlockState blockState,
+            int updateFlags,
+            int updateLimit,
+            CallbackInfoReturnable<Boolean> cir
+    ) {
+        SameBlockBreakManager.endLevelSetBlockWrite();
     }
 }
