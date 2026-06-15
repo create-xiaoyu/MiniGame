@@ -1,5 +1,6 @@
 package com.xiaoyu.minigame.gamefeature.sameblockbreak;
 
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.ChunkPlaceBlockManager;
 import com.xiaoyu.minigame.gamefeature.common.chunk.ChunkTracker;
 import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfig;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -66,7 +67,10 @@ public final class SameBlockBreakManager {
             return;
         }
 
-        startTargetFromTrigger(level, target, origin, breaker, StartMessageMode.BLOCK_BREAK_BROADCAST);
+        ActivationResult activationResult = startTargetFromTrigger(level, target, origin, breaker, StartMessageMode.BLOCK_BREAK_BROADCAST);
+        if (activationResult != ActivationResult.MAX_ACTIVE_TARGETS) {
+            target.forgetConflictingChunkPlaceRules(level);
+        }
     }
 
     public static void startFromBucketPickup(ServerLevel level, BlockPos origin, BlockState pickedState, @Nullable Entity picker) {
@@ -79,10 +83,13 @@ public final class SameBlockBreakManager {
             return;
         }
 
-        startTargetFromTrigger(level, target, origin, picker, StartMessageMode.BUCKET_PICKUP_BROADCAST);
+        ActivationResult activationResult = startTargetFromTrigger(level, target, origin, picker, StartMessageMode.BUCKET_PICKUP_BROADCAST);
+        if (activationResult != ActivationResult.MAX_ACTIVE_TARGETS) {
+            target.forgetConflictingChunkPlaceRules(level);
+        }
     }
 
-    private static void startTargetFromTrigger(
+    private static ActivationResult startTargetFromTrigger(
             ServerLevel level,
             CleanupTarget target,
             BlockPos origin,
@@ -92,7 +99,7 @@ public final class SameBlockBreakManager {
         LevelState levelState = stateFor(level);
         ActivationResult activationResult = levelState.activateFromTrigger(level, target, origin.immutable(), breaker, startMessageMode);
         if (activationResult == ActivationResult.ALREADY_RUNNING) {
-            return;
+            return activationResult;
         }
 
         if (activationResult == ActivationResult.MAX_ACTIVE_TARGETS) {
@@ -102,13 +109,14 @@ public final class SameBlockBreakManager {
                         SameBlockBreakConfig.MAX_ACTIVE_TARGETS.getAsInt()
                 ));
             }
-            return;
+            return activationResult;
         }
         updateActivePreventionSet();
 
         if (SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()) {
             addPersistedRule(level.getServer(), target);
         }
+        return activationResult;
     }
 
     public static StartResult startFromCommand(ServerLevel level, String blockIdText, BlockPos origin, @Nullable Entity sourceEntity) {
@@ -120,12 +128,14 @@ public final class SameBlockBreakManager {
         LevelState levelState = stateFor(level);
         ActivationResult activationResult = levelState.activateFromTrigger(level, target, origin.immutable(), sourceEntity, StartMessageMode.DIRECT_PLAYER);
         if (activationResult == ActivationResult.ALREADY_RUNNING) {
+            target.forgetConflictingChunkPlaceRules(level);
             return StartResult.ALREADY_RUNNING;
         }
         if (activationResult == ActivationResult.MAX_ACTIVE_TARGETS) {
             return StartResult.MAX_ACTIVE_TARGETS;
         }
         updateActivePreventionSet();
+        target.forgetConflictingChunkPlaceRules(level);
 
         if (SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()) {
             addPersistedRule(level.getServer(), target);
@@ -504,6 +514,14 @@ public final class SameBlockBreakManager {
             return this.kind == TargetKind.FLUID ? FLUID_TARGET_PREFIX + this.id : this.id.toString();
         }
 
+        private int forgetConflictingChunkPlaceRules(ServerLevel level) {
+            if (this.kind == TargetKind.BLOCK) {
+                return this.block == null ? 0 : ChunkPlaceBlockManager.forgetPersistentRulesForBlockCleanup(level, this.block);
+            }
+
+            return this.fluid == null ? 0 : ChunkPlaceBlockManager.forgetPersistentRulesForFluidCleanup(level, this.fluid);
+        }
+
         private void collectPreventedBlocks(Set<Block> blocks) {
             if (this.kind == TargetKind.BLOCK) {
                 blocks.add(this.block);
@@ -560,6 +578,7 @@ public final class SameBlockBreakManager {
                 CleanupTarget target = resolveTarget(targetId);
                 if (target != null) {
                     changed |= this.activatePersisted(target);
+                    target.forgetConflictingChunkPlaceRules(level);
                 }
             }
             if (changed) {
@@ -913,6 +932,9 @@ public final class SameBlockBreakManager {
 
                 if (changed) {
                     budget.changedBlock();
+                    if (needsRemoval) {
+                        ChunkPlaceBlockManager.forgetPersistentRulesForBreak(level, pos, state);
+                    }
                     this.enqueueSupportAround(pos, check.depth() - 1);
                 }
 
@@ -939,6 +961,7 @@ public final class SameBlockBreakManager {
             }
 
             if (changed) {
+                ChunkPlaceBlockManager.forgetPersistentRulesForBreak(level, pos, state);
                 this.enqueueSupportAround(pos, SameBlockBreakConfig.SUPPORT_CASCADE_DEPTH.getAsInt());
             }
 

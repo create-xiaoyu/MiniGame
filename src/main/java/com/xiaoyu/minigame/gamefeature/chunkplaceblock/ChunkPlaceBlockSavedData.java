@@ -5,7 +5,11 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.xiaoyu.minigame.MiniGame;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.FlowingFluid;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.saveddata.SavedDataType;
 import org.jspecify.annotations.Nullable;
@@ -16,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 public final class ChunkPlaceBlockSavedData extends SavedData {
     private static final Codec<SavedPlacementRule> RULE_CODEC = RecordCodecBuilder.create(instance -> instance.group(
@@ -63,14 +68,32 @@ public final class ChunkPlaceBlockSavedData extends SavedData {
     }
 
     public int removeRulesForBreak(int localX, int y, int localZ, BlockState brokenState, boolean onlyMatchingBlock, boolean exactState) {
+        return this.removeRulesMatching(rule -> {
+            if (!rule.matchesPosition(localX, y, localZ)) {
+                return false;
+            }
+            return !onlyMatchingBlock || rule.matchesState(brokenState, exactState);
+        });
+    }
+
+    public int removeRulesMatchingBlock(Block block) {
+        return this.removeRulesMatching(rule -> rule.state().is(block));
+    }
+
+    public int removeRulesMatchingFluid(Fluid fluid) {
+        Fluid sourceFluid = sourceFluid(fluid);
+        return this.removeRulesMatching(rule -> {
+            FluidState fluidState = rule.state().getFluidState();
+            return !fluidState.isEmpty() && sourceFluid(fluidState.getType()).isSame(sourceFluid);
+        });
+    }
+
+    private int removeRulesMatching(Predicate<SavedPlacementRule> predicate) {
         int removed = 0;
         Iterator<Map.Entry<Long, SavedPlacementRule>> iterator = this.rules.entrySet().iterator();
         while (iterator.hasNext()) {
             SavedPlacementRule rule = iterator.next().getValue();
-            if (!rule.matchesPosition(localX, y, localZ)) {
-                continue;
-            }
-            if (onlyMatchingBlock && !rule.matchesState(brokenState, exactState)) {
+            if (!predicate.test(rule)) {
                 continue;
             }
 
@@ -82,6 +105,10 @@ public final class ChunkPlaceBlockSavedData extends SavedData {
             this.setDirty();
         }
         return removed;
+    }
+
+    private static Fluid sourceFluid(Fluid fluid) {
+        return fluid instanceof FlowingFluid flowingFluid ? flowingFluid.getSource() : fluid;
     }
 
     public int clearRules() {

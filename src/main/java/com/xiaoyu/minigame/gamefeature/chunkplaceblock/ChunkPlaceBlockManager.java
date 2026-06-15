@@ -161,13 +161,21 @@ public final class ChunkPlaceBlockManager {
 
     public static void syncFromBreak(ServerLevel level, BlockPos origin, BlockState state, @Nullable Entity breaker) {
         if (!ChunkPlaceBlockConfig.ENABLED.get()
-                || !ChunkPlaceBlockConfig.SYNC_BREAKS.get()
                 || isSyncing()
                 || state.isAir()) {
             return;
         }
 
-        int removedRules = removePersistentRulesForBreak(level, origin, state);
+        int removedRules = forgetPersistentRulesForBreak(level, origin, state);
+        if (!ChunkPlaceBlockConfig.SYNC_BREAKS.get()) {
+            LOGGER.debug(
+                    "Chunk-place removed {} persistent rule(s) for {}, but skipped mirrored breaking because syncBreaks is disabled",
+                    removedRules,
+                    origin
+            );
+            return;
+        }
+
         if (ChunkPlaceBlockConfig.SYNC_BREAKS_ONLY_WHEN_SAME_BLOCK_BREAK_DISABLED.get() && SameBlockBreakConfig.ENABLED.get()) {
             LOGGER.debug(
                     "Chunk-place removed {} persistent rule(s) for {}, but skipped mirrored breaking because sameblockbreak is enabled",
@@ -199,6 +207,59 @@ public final class ChunkPlaceBlockManager {
                     result.chunksVisited
             ));
         }
+    }
+
+    public static int forgetPersistentRulesForBreak(ServerLevel level, BlockPos origin, BlockState state) {
+        if (!ChunkPlaceBlockConfig.ENABLED.get() || isSyncing() || state.isAir()) {
+            return 0;
+        }
+
+        return removePersistentRulesForBreak(level, origin, state);
+    }
+
+    public static int forgetPersistentRulesForBlockCleanup(ServerLevel level, Block block) {
+        if (!ChunkPlaceBlockConfig.ENABLED.get() || !ChunkPlaceBlockConfig.PERSIST_PLACEMENT_RULES.get()) {
+            return 0;
+        }
+
+        ChunkPlaceBlockSavedData data = existingSavedData(level);
+        if (data == null) {
+            return 0;
+        }
+
+        int removed = data.removeRulesMatchingBlock(block);
+        if (removed > 0) {
+            stateFor(level).invalidatePersistentChunks();
+            LOGGER.debug(
+                    "Chunk-place removed {} persistent rule(s) for same-block cleanup of {} in {}",
+                    removed,
+                    block.getName().getString(),
+                    level.dimension()
+            );
+        }
+        return removed;
+    }
+
+    public static int forgetPersistentRulesForFluidCleanup(ServerLevel level, Fluid fluid) {
+        if (!ChunkPlaceBlockConfig.ENABLED.get() || !ChunkPlaceBlockConfig.PERSIST_PLACEMENT_RULES.get()) {
+            return 0;
+        }
+
+        ChunkPlaceBlockSavedData data = existingSavedData(level);
+        if (data == null) {
+            return 0;
+        }
+
+        int removed = data.removeRulesMatchingFluid(sourceFluid(fluid));
+        if (removed > 0) {
+            stateFor(level).invalidatePersistentChunks();
+            LOGGER.debug(
+                    "Chunk-place removed {} persistent rule(s) for same-fluid cleanup in {}",
+                    removed,
+                    level.dimension()
+            );
+        }
+        return removed;
     }
 
     public static void tick(ServerLevel level) {
