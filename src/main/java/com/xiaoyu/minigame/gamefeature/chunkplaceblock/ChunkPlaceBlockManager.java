@@ -1,6 +1,7 @@
 package com.xiaoyu.minigame.gamefeature.chunkplaceblock;
 
 import com.mojang.logging.LogUtils;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.ChunkPlaceBlockBreakSavedData.SavedBreakRule;
 import com.xiaoyu.minigame.gamefeature.chunkplaceblock.ChunkPlaceBlockSavedData.SavedPlacementRule;
 import com.xiaoyu.minigame.gamefeature.chunkplaceblock.config.ChunkPlaceBlockConfig;
 import com.xiaoyu.minigame.gamefeature.common.chunk.ChunkTracker;
@@ -12,7 +13,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.FullChunkStatus;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.ProblemReporter;
@@ -169,7 +172,7 @@ public final class ChunkPlaceBlockManager {
         int removedRules = forgetPersistentRulesForBreak(level, origin, state);
         if (!ChunkPlaceBlockConfig.SYNC_BREAKS.get()) {
             LOGGER.debug(
-                    "Chunk-place removed {} persistent rule(s) for {}, but skipped mirrored breaking because syncBreaks is disabled",
+                    "Chunk-place removed {} persistent placement rule(s) for {}, but skipped mirrored breaking because syncBreaks is disabled",
                     removedRules,
                     origin
             );
@@ -178,16 +181,17 @@ public final class ChunkPlaceBlockManager {
 
         if (ChunkPlaceBlockConfig.SYNC_BREAKS_ONLY_WHEN_SAME_BLOCK_BREAK_DISABLED.get() && SameBlockBreakConfig.ENABLED.get()) {
             LOGGER.debug(
-                    "Chunk-place removed {} persistent rule(s) for {}, but skipped mirrored breaking because sameblockbreak is enabled",
+                    "Chunk-place removed {} persistent placement rule(s) for {}, but skipped mirrored breaking because sameblockbreak is enabled",
                     removedRules,
                     origin
             );
             return;
         }
 
+        int rememberedBreakRules = rememberPersistentBreakForBreak(level, origin, state);
         BreakResult result = applyBreakToLoadedChunks(level, origin, state, breaker);
         LOGGER.debug(
-                "Chunk-place break result in {}: changed={}, chunksVisited={}, nonMatchingSkipped={}, outOfBoundsSkipped={}, sourceSkipped={}, staleChunkSkipped={}, limited={}, persistentRulesRemoved={}",
+                "Chunk-place break result in {}: changed={}, chunksVisited={}, nonMatchingSkipped={}, outOfBoundsSkipped={}, sourceSkipped={}, staleChunkSkipped={}, limited={}, persistentPlacementRulesRemoved={}, persistentBreakRulesSaved={}",
                 level.dimension(),
                 result.changed,
                 result.chunksVisited,
@@ -196,7 +200,8 @@ public final class ChunkPlaceBlockManager {
                 result.skippedSource,
                 result.skippedStaleChunks,
                 result.limited,
-                removedRules
+                removedRules,
+                rememberedBreakRules
         );
 
         if (breaker instanceof ServerPlayer player && ChunkPlaceBlockConfig.SEND_BREAK_MESSAGE.get()) {
@@ -277,11 +282,14 @@ public final class ChunkPlaceBlockManager {
         }
 
         ChunkPlaceBlockSavedData data = existingSavedData(level);
-        if (data == null || data.ruleCount() == 0) {
+        ChunkPlaceBlockBreakSavedData breakData = existingBreakSavedData(level);
+        List<SavedPlacementRule> placementRules = data == null ? List.of() : data.rules();
+        List<SavedBreakRule> breakRules = breakData == null ? List.of() : breakData.rules();
+        if (placementRules.isEmpty() && breakRules.isEmpty()) {
             return;
         }
 
-        stateFor(level).processPersistentRules(level, data.rules());
+        stateFor(level).processPersistentRules(level, placementRules, breakRules);
     }
 
     public static void onChunkUnload(ServerLevel level, long chunkKey) {
@@ -297,7 +305,9 @@ public final class ChunkPlaceBlockManager {
 
     public static int clearRules(ServerLevel level) {
         ChunkPlaceBlockSavedData data = existingSavedData(level);
+        ChunkPlaceBlockBreakSavedData breakData = existingBreakSavedData(level);
         int removed = data == null ? 0 : data.clearRules();
+        removed += breakData == null ? 0 : breakData.clearRules();
         LevelState levelState = LEVEL_STATES.get(level);
         if (levelState != null) {
             levelState.invalidatePersistentChunks();
@@ -311,7 +321,8 @@ public final class ChunkPlaceBlockManager {
         ChunkPlaceBlockSavedData data = existingSavedData(level);
         int pendingBuckets = levelState == null ? 0 : levelState.pendingBuckets.size();
         int processedChunks = levelState == null ? 0 : levelState.processedPersistentChunks.size();
-        int persistentRules = data == null ? 0 : data.ruleCount();
+        ChunkPlaceBlockBreakSavedData breakData = existingBreakSavedData(level);
+        int persistentRules = (data == null ? 0 : data.ruleCount()) + (breakData == null ? 0 : breakData.ruleCount());
         int loadedChunks = ChunkTracker.getLoadedChunks(level).size();
         return new ChunkPlaceBlockStatus(loadedChunks, persistentRules, processedChunks, pendingBuckets);
     }
@@ -331,6 +342,14 @@ public final class ChunkPlaceBlockManager {
 
     private static ChunkPlaceBlockSavedData savedData(ServerLevel level) {
         return level.getDataStorage().computeIfAbsent(ChunkPlaceBlockSavedData.TYPE);
+    }
+
+    private static @Nullable ChunkPlaceBlockBreakSavedData existingBreakSavedData(ServerLevel level) {
+        return level.getDataStorage().get(ChunkPlaceBlockBreakSavedData.TYPE);
+    }
+
+    private static ChunkPlaceBlockBreakSavedData breakSavedData(ServerLevel level) {
+        return level.getDataStorage().computeIfAbsent(ChunkPlaceBlockBreakSavedData.TYPE);
     }
 
     private static @Nullable MirroredBlock captureMirroredBlock(ServerLevel level, BlockPos sourcePos) {
@@ -359,6 +378,7 @@ public final class ChunkPlaceBlockManager {
             return 0;
         }
 
+        int removedBreakRules = removePersistentBreakRulesForPlacement(level, blocks);
         ChunkPlaceBlockSavedData data = savedData(level);
         int changed = 0;
         for (MirroredBlock block : blocks) {
@@ -367,10 +387,23 @@ public final class ChunkPlaceBlockManager {
             }
         }
 
-        if (changed > 0) {
+        if (changed > 0 || removedBreakRules > 0) {
             stateFor(level).invalidatePersistentChunks();
         }
         return changed;
+    }
+
+    private static int removePersistentBreakRulesForPlacement(ServerLevel level, List<MirroredBlock> blocks) {
+        ChunkPlaceBlockBreakSavedData data = existingBreakSavedData(level);
+        if (data == null) {
+            return 0;
+        }
+
+        int removed = 0;
+        for (MirroredBlock block : blocks) {
+            removed += data.removeRulesAt(block.localX(), block.y(), block.localZ());
+        }
+        return removed;
     }
 
     private static int removePersistentRulesForBreak(ServerLevel level, BlockPos origin, BlockState state) {
@@ -395,6 +428,27 @@ public final class ChunkPlaceBlockManager {
             stateFor(level).invalidatePersistentChunks();
         }
         return removed;
+    }
+
+    private static int rememberPersistentBreakForBreak(ServerLevel level, BlockPos origin, BlockState state) {
+        if (!ChunkPlaceBlockConfig.PERSIST_PLACEMENT_RULES.get()) {
+            return 0;
+        }
+
+        SavedBreakRule rule = SavedBreakRule.fromBreak(
+                origin.getX() & 15,
+                origin.getY(),
+                origin.getZ() & 15,
+                state,
+                ChunkPlaceBlockConfig.BREAK_ONLY_MATCHING_BLOCK.get(),
+                ChunkPlaceBlockConfig.BREAK_REQUIRE_EXACT_STATE.get()
+        );
+        boolean changed = breakSavedData(level).upsertRule(rule);
+        if (changed) {
+            stateFor(level).invalidatePersistentChunks();
+            return 1;
+        }
+        return 0;
     }
 
     private static PlacementResult applyPlacementToLoadedChunks(ServerLevel level, List<MirroredBlock> blocks, int maxChanges, String reason) {
@@ -527,6 +581,49 @@ public final class ChunkPlaceBlockManager {
         return result;
     }
 
+    private static void applyPersistentBreaksToChunk(
+            ServerLevel level,
+            LevelChunk chunk,
+            List<SavedBreakRule> rules,
+            MutableBudget budget,
+            BreakResult result
+    ) {
+        for (SavedBreakRule rule : rules) {
+            if (!budget.hasBudget()) {
+                result.limited = true;
+                return;
+            }
+
+            BlockPos targetPos = new BlockPos(
+                    SectionPos.sectionToBlockCoord(chunk.getPos().x(), rule.localX()),
+                    rule.y(),
+                    SectionPos.sectionToBlockCoord(chunk.getPos().z(), rule.localZ())
+            );
+
+            if (!level.isInWorldBounds(targetPos)) {
+                result.skippedOutOfBounds++;
+                logSkippedTarget("break", "persistent", targetPos, PlacementSkipReason.OUT_OF_BOUNDS);
+                continue;
+            }
+
+            BlockState targetState = chunk.getBlockState(targetPos);
+            if (targetState.isAir()) {
+                result.skippedAir++;
+                continue;
+            }
+            if (!rule.shouldBreak(targetState)) {
+                result.skippedNonMatching++;
+                logSkippedTarget("break", "persistent", targetPos, PlacementSkipReason.NON_MATCHING);
+                continue;
+            }
+
+            if (destroyMirroredBlock(level, chunk, targetPos, targetState, null)) {
+                budget.spendOne();
+                result.changed++;
+            }
+        }
+    }
+
     private static PlacementSkipReason placementSkipReason(ServerLevel level, LevelChunk chunk, BlockPos targetPos, MirroredBlock block, LongSet sourcePositions) {
         if (sourcePositions.contains(targetPos.asLong())) {
             return PlacementSkipReason.SOURCE;
@@ -570,6 +667,7 @@ public final class ChunkPlaceBlockManager {
             );
             if (changed) {
                 restoreBlockEntityData(level, targetPos, block);
+                sendWatchedBlockUpdateIfNeeded(level, chunk, targetPos);
             }
             return changed;
         } finally {
@@ -585,23 +683,39 @@ public final class ChunkPlaceBlockManager {
 
         beginSync();
         try {
+            boolean changed;
             if (ChunkPlaceBlockConfig.BREAK_DROP_RESOURCES.get()) {
-                return level.destroyBlock(
+                changed = level.destroyBlock(
                     targetPos,
                     true,
                     breaker,
                     effectiveBreakUpdateLimit()
                 );
+            } else {
+                changed = level.setBlock(
+                        targetPos,
+                        targetState.getFluidState().createLegacyBlock(),
+                        effectiveBreakUpdateFlags(),
+                        effectiveBreakUpdateLimit()
+                );
             }
-
-            return level.setBlock(
-                    targetPos,
-                    targetState.getFluidState().createLegacyBlock(),
-                    effectiveBreakUpdateFlags(),
-                    effectiveBreakUpdateLimit()
-            );
+            if (changed) {
+                sendWatchedBlockUpdateIfNeeded(level, chunk, targetPos);
+            }
+            return changed;
         } finally {
             endSync();
+        }
+    }
+
+    private static void sendWatchedBlockUpdateIfNeeded(ServerLevel level, LevelChunk chunk, BlockPos targetPos) {
+        if (chunk.getFullStatus().isOrAfter(FullChunkStatus.BLOCK_TICKING)) {
+            return;
+        }
+
+        ClientboundBlockUpdatePacket packet = new ClientboundBlockUpdatePacket(targetPos, level.getBlockState(targetPos));
+        for (ServerPlayer player : level.getChunkSource().chunkMap.getPlayers(chunk.getPos(), false)) {
+            player.connection.send(packet);
         }
     }
 
@@ -768,15 +882,16 @@ public final class ChunkPlaceBlockManager {
             }
         }
 
-        private void processPersistentRules(ServerLevel level, List<SavedPlacementRule> savedRules) {
-            if (savedRules.isEmpty()) {
+        private void processPersistentRules(ServerLevel level, List<SavedPlacementRule> savedPlacementRules, List<SavedBreakRule> savedBreakRules) {
+            if (savedPlacementRules.isEmpty() && savedBreakRules.isEmpty()) {
                 return;
             }
 
-            List<MirroredBlock> rules = savedRules.stream().map(MirroredBlock::fromSavedRule).toList();
-            MutableBudget placementBudget = new MutableBudget(ChunkPlaceBlockConfig.MAX_PERSISTENT_PLACEMENTS_PER_TICK.getAsInt());
+            List<MirroredBlock> placementRules = savedPlacementRules.stream().map(MirroredBlock::fromSavedRule).toList();
+            MutableBudget changeBudget = new MutableBudget(ChunkPlaceBlockConfig.MAX_PERSISTENT_PLACEMENTS_PER_TICK.getAsInt());
             MutableBudget chunkBudget = new MutableBudget(ChunkPlaceBlockConfig.MAX_PERSISTENT_CHUNKS_PER_TICK.getAsInt());
-            PlacementResult result = new PlacementResult();
+            PlacementResult placementResult = new PlacementResult();
+            BreakResult breakResult = new BreakResult();
             LongSet emptySources = new LongOpenHashSet();
 
             for (LevelChunk chunk : ChunkTracker.getLoadedChunks(level)) {
@@ -784,18 +899,22 @@ public final class ChunkPlaceBlockManager {
                 if (this.processedPersistentChunks.contains(chunkKey)) {
                     continue;
                 }
-                if (!chunkBudget.hasBudget() || !placementBudget.hasBudget()) {
-                    result.limited = true;
+                if (!chunkBudget.hasBudget() || !changeBudget.hasBudget()) {
+                    placementResult.limited = true;
+                    breakResult.limited = true;
                     break;
                 }
                 if (!isCurrentLoadedChunk(level, chunk)) {
-                    result.skippedStaleChunks++;
+                    placementResult.skippedStaleChunks++;
+                    breakResult.skippedStaleChunks++;
                     continue;
                 }
 
-                result.chunksVisited++;
-                applyPlacementToChunk(level, chunk, rules, emptySources, placementBudget, result, "persistent");
-                if (result.limited) {
+                placementResult.chunksVisited++;
+                breakResult.chunksVisited++;
+                applyPersistentBreaksToChunk(level, chunk, savedBreakRules, changeBudget, breakResult);
+                applyPlacementToChunk(level, chunk, placementRules, emptySources, changeBudget, placementResult, "persistent");
+                if (placementResult.limited || breakResult.limited) {
                     break;
                 }
 
@@ -803,16 +922,18 @@ public final class ChunkPlaceBlockManager {
                 chunkBudget.spendOne();
             }
 
-            if (result.changed > 0 || result.limited) {
+            if (placementResult.changed > 0 || breakResult.changed > 0 || placementResult.limited || breakResult.limited) {
                 LOGGER.debug(
-                        "Chunk-place persistent pass in {}: changed={}, chunksVisited={}, processedChunks={}, staleChunkSkipped={}, rules={}, limited={}",
+                        "Chunk-place persistent pass in {}: placed={}, broken={}, chunksVisited={}, processedChunks={}, staleChunkSkipped={}, placementRules={}, breakRules={}, limited={}",
                         level.dimension(),
-                        result.changed,
-                        result.chunksVisited,
+                        placementResult.changed,
+                        breakResult.changed,
+                        Math.max(placementResult.chunksVisited, breakResult.chunksVisited),
                         this.processedPersistentChunks.size(),
-                        result.skippedStaleChunks,
-                        savedRules.size(),
-                        result.limited
+                        Math.max(placementResult.skippedStaleChunks, breakResult.skippedStaleChunks),
+                        savedPlacementRules.size(),
+                        savedBreakRules.size(),
+                        placementResult.limited || breakResult.limited
                 );
             }
         }
