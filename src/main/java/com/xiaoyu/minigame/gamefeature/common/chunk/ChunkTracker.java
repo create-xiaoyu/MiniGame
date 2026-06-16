@@ -4,6 +4,7 @@ import com.xiaoyu.minigame.gamefeature.common.config.CommonConfig;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -21,8 +22,22 @@ public class ChunkTracker {
     private static final Map<ServerLevel, Long2ObjectMap<PendingChunk>> PENDING = new IdentityHashMap<>();
 
     public static Collection<LevelChunk> getLoadedChunks(ServerLevel level) {
-        Long2ObjectMap<LevelChunk> chunks = LOADED.get(level);
-        return chunks == null ? List.of() : List.copyOf(chunks.values());
+        Long2ObjectMap<LevelChunk> chunks = new Long2ObjectOpenHashMap<>();
+        Long2ObjectMap<LevelChunk> trackedChunks = LOADED.get(level);
+        if (trackedChunks != null) {
+            chunks.putAll(trackedChunks);
+        }
+
+        for (ServerPlayer player : level.players()) {
+            player.getChunkTrackingView().forEach(pos -> {
+                LevelChunk chunk = level.getChunkSource().getChunkNow(pos.x(), pos.z());
+                if (chunk != null) {
+                    chunks.put(chunk.getPos().pack(), chunk);
+                }
+            });
+        }
+
+        return chunks.isEmpty() ? List.of() : List.copyOf(chunks.values());
     }
 
     public static void clearAll() {
