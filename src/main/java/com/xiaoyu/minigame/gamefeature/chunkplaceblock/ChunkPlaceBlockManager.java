@@ -13,12 +13,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.FullChunkStatus;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.ProblemReporter;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BucketItem;
@@ -40,6 +42,7 @@ import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -289,7 +292,9 @@ public final class ChunkPlaceBlockManager {
             return;
         }
 
-        stateFor(level).processPersistentRules(level, placementRules, breakRules);
+        LevelState levelStateForRules = stateFor(level);
+        levelStateForRules.processPersistentRules(level, placementRules, breakRules);
+        levelStateForRules.syncContainerContents(level, placementRules);
     }
 
     public static void onChunkUnload(ServerLevel level, long chunkKey) {
@@ -310,7 +315,7 @@ public final class ChunkPlaceBlockManager {
         removed += breakData == null ? 0 : breakData.clearRules();
         LevelState levelState = LEVEL_STATES.get(level);
         if (levelState != null) {
-            levelState.invalidatePersistentChunks();
+            levelState.clearPersistentState();
         }
         LOGGER.debug("Chunk-place cleared {} persistent placement rule(s) in {}", removed, level.dimension());
         return removed;
@@ -390,7 +395,27 @@ public final class ChunkPlaceBlockManager {
         if (changed > 0 || removedBreakRules > 0) {
             stateFor(level).invalidatePersistentChunks();
         }
+        initializeContainerSnapshotsFromPlacement(level, blocks);
         return changed;
+    }
+
+    private static void initializeContainerSnapshotsFromPlacement(ServerLevel level, List<MirroredBlock> blocks) {
+        LevelState levelState = stateFor(level);
+        for (MirroredBlock block : blocks) {
+            levelState.resetContainerSnapshot(block.localKey());
+
+            if (!ChunkPlaceBlockConfig.SYNC_CONTAINER_CONTENTS.get()) {
+                continue;
+            }
+            if (block.sourcePos() == null || !block.state().hasBlockEntity()) {
+                continue;
+            }
+
+            ContainerRef source = containerAt(level, block.sourcePos(), block.state());
+            if (source != null) {
+                levelState.setContainerSnapshot(block.localKey(), ContainerContents.from(source.container()), block.sourcePos());
+            }
+        }
     }
 
     private static int removePersistentBreakRulesForPlacement(ServerLevel level, List<MirroredBlock> blocks) {
@@ -425,7 +450,9 @@ public final class ChunkPlaceBlockManager {
                 ChunkPlaceBlockConfig.BREAK_REQUIRE_EXACT_STATE.get()
         );
         if (removed > 0) {
-            stateFor(level).invalidatePersistentChunks();
+            LevelState levelState = stateFor(level);
+            levelState.invalidatePersistentChunks();
+            levelState.resetContainerSnapshot(localKey(origin.getX() & 15, origin.getY(), origin.getZ() & 15));
         }
         return removed;
     }
@@ -624,6 +651,81 @@ public final class ChunkPlaceBlockManager {
         }
     }
 
+    private static List<ContainerCandidate> collectContainerCandidates(ServerLevel level, SavedPlacementRule rule) {
+        if (!rule.state().hasBlockEntity()) {
+            return List.of();
+        }
+
+        List<ContainerCandidate> candidates = new ArrayList<>();
+        for (LevelChunk chunk : ChunkTracker.getLoadedChunks(level)) {
+            if (!isCurrentLoadedChunk(level, chunk)) {
+                continue;
+            }
+
+            BlockPos targetPos = new BlockPos(
+                    SectionPos.sectionToBlockCoord(chunk.getPos().x(), rule.localX()),
+                    rule.y(),
+                    SectionPos.sectionToBlockCoord(chunk.getPos().z(), rule.localZ())
+            );
+            if (!level.isInWorldBounds(targetPos)) {
+                continue;
+            }
+
+            BlockState currentState = chunk.getBlockState(targetPos);
+            if (!currentState.is(rule.state().getBlock())) {
+                continue;
+            }
+
+            BlockEntity blockEntity = level.getBlockEntity(targetPos);
+            if (blockEntity instanceof Container container) {
+                candidates.add(new ContainerCandidate(
+                        targetPos.immutable(),
+                        chunk,
+                        blockEntity,
+                        container,
+                        ContainerContents.from(container)
+                ));
+            }
+        }
+        return candidates;
+    }
+
+    private static @Nullable ContainerRef containerAt(ServerLevel level, BlockPos pos, BlockState expectedState) {
+        if (!level.isInWorldBounds(pos) || !level.getBlockState(pos).is(expectedState.getBlock())) {
+            return null;
+        }
+
+        BlockEntity blockEntity = level.getBlockEntity(pos);
+        if (blockEntity instanceof Container container) {
+            return new ContainerRef(blockEntity, container);
+        }
+        return null;
+    }
+
+    private static boolean applyContainerContentsToCandidate(ServerLevel level, ContainerCandidate candidate, ContainerContents contents) {
+        if (!contents.applyTo(candidate.container())) {
+            return false;
+        }
+
+        candidate.blockEntity().setChanged();
+        sendContainerBlockEntityUpdate(level, candidate.chunk(), candidate.blockEntity());
+        broadcastContainerMenuChanges(level, candidate.chunk());
+        return true;
+    }
+
+    private static void sendContainerBlockEntityUpdate(ServerLevel level, LevelChunk chunk, BlockEntity blockEntity) {
+        ClientboundBlockEntityDataPacket packet = ClientboundBlockEntityDataPacket.create(blockEntity);
+        for (ServerPlayer player : level.getChunkSource().chunkMap.getPlayers(chunk.getPos(), false)) {
+            player.connection.send(packet);
+        }
+    }
+
+    private static void broadcastContainerMenuChanges(ServerLevel level, LevelChunk chunk) {
+        for (ServerPlayer player : level.getChunkSource().chunkMap.getPlayers(chunk.getPos(), false)) {
+            player.containerMenu.broadcastChanges();
+        }
+    }
+
     private static PlacementSkipReason placementSkipReason(ServerLevel level, LevelChunk chunk, BlockPos targetPos, MirroredBlock block, LongSet sourcePositions) {
         if (sourcePositions.contains(targetPos.asLong())) {
             return PlacementSkipReason.SOURCE;
@@ -803,6 +905,10 @@ public final class ChunkPlaceBlockManager {
         return fluid instanceof FlowingFluid flowingFluid ? flowingFluid.getSource() : fluid;
     }
 
+    private static long localKey(int localX, int y, int localZ) {
+        return ((long) y & 0xFFFFFFFFL) << 8 | (long) (localX & 15) << 4 | (long) (localZ & 15);
+    }
+
     private static LongSet sourcePositions(List<MirroredBlock> blocks) {
         LongOpenHashSet sourcePositions = new LongOpenHashSet();
         for (MirroredBlock block : blocks) {
@@ -842,10 +948,27 @@ public final class ChunkPlaceBlockManager {
     private static final class LevelState {
         private final List<PendingBucketPlacement> pendingBuckets = new ArrayList<>();
         private final LongSet processedPersistentChunks = new LongOpenHashSet();
+        private final Map<Long, ContainerContents> containerSnapshots = new HashMap<>();
+        private final Map<Long, LongSet> knownContainerPositions = new HashMap<>();
 
         private void addPendingBucket(PendingBucketPlacement candidate) {
             this.pendingBuckets.removeIf(existing -> existing.sameTarget(candidate));
             this.pendingBuckets.add(candidate);
+        }
+
+        private void setContainerSnapshot(long localKey, ContainerContents contents, @Nullable BlockPos knownPosition) {
+            this.containerSnapshots.put(localKey, contents);
+            this.knownContainerPositions.remove(localKey);
+            if (knownPosition != null) {
+                LongSet positions = new LongOpenHashSet();
+                positions.add(knownPosition.asLong());
+                this.knownContainerPositions.put(localKey, positions);
+            }
+        }
+
+        private void resetContainerSnapshot(long localKey) {
+            this.containerSnapshots.remove(localKey);
+            this.knownContainerPositions.remove(localKey);
         }
 
         private void processPendingBuckets(ServerLevel level) {
@@ -941,6 +1064,85 @@ public final class ChunkPlaceBlockManager {
         private void invalidatePersistentChunks() {
             this.processedPersistentChunks.clear();
         }
+
+        private void clearPersistentState() {
+            this.processedPersistentChunks.clear();
+            this.containerSnapshots.clear();
+            this.knownContainerPositions.clear();
+        }
+
+        private void syncContainerContents(ServerLevel level, List<SavedPlacementRule> savedPlacementRules) {
+            if (!ChunkPlaceBlockConfig.SYNC_CONTAINER_CONTENTS.get() || savedPlacementRules.isEmpty()) {
+                return;
+            }
+
+            for (SavedPlacementRule rule : savedPlacementRules) {
+                this.syncContainerContents(level, rule);
+            }
+        }
+
+        private void syncContainerContents(ServerLevel level, SavedPlacementRule rule) {
+            long localKey = localKey(rule.localX(), rule.y(), rule.localZ());
+            List<ContainerCandidate> candidates = collectContainerCandidates(level, rule);
+            if (candidates.isEmpty()) {
+                this.knownContainerPositions.remove(localKey);
+                return;
+            }
+
+            LongOpenHashSet currentPositions = new LongOpenHashSet();
+            for (ContainerCandidate candidate : candidates) {
+                currentPositions.add(candidate.pos().asLong());
+            }
+
+            ContainerContents baseline = this.containerSnapshots.get(localKey);
+            LongSet knownPositions = this.knownContainerPositions.get(localKey);
+            ContainerContents source = baseline == null ? chooseInitialContainerContents(candidates) : null;
+            if (baseline != null && knownPositions != null) {
+                for (ContainerCandidate candidate : candidates) {
+                    if (knownPositions.contains(candidate.pos().asLong()) && !baseline.sameContents(candidate.contents())) {
+                        source = candidate.contents();
+                        break;
+                    }
+                }
+            }
+
+            ContainerContents targetContents = source == null ? baseline : source;
+            if (targetContents == null) {
+                this.knownContainerPositions.put(localKey, currentPositions);
+                return;
+            }
+
+            int changed = 0;
+            for (ContainerCandidate candidate : candidates) {
+                if (!targetContents.sameContents(candidate.contents())
+                        && applyContainerContentsToCandidate(level, candidate, targetContents)) {
+                    changed++;
+                }
+            }
+
+            this.containerSnapshots.put(localKey, targetContents);
+            this.knownContainerPositions.put(localKey, currentPositions);
+            if (changed > 0) {
+                LOGGER.debug(
+                        "Chunk-place synchronized container contents in {}: local=({}, {}, {}), targetsChanged={}",
+                        level.dimension(),
+                        rule.localX(),
+                        rule.y(),
+                        rule.localZ(),
+                        changed
+                );
+            }
+        }
+
+        private static ContainerContents chooseInitialContainerContents(List<ContainerCandidate> candidates) {
+            ContainerContents first = candidates.getFirst().contents();
+            for (ContainerCandidate candidate : candidates) {
+                if (candidate.contents().hasItems()) {
+                    return candidate.contents();
+                }
+            }
+            return first;
+        }
     }
 
     private static void syncBucketPlacement(ServerLevel level, MirroredBlock block, @Nullable ServerPlayer player) {
@@ -969,6 +1171,64 @@ public final class ChunkPlaceBlockManager {
                     result.changed,
                     result.chunksVisited
             ));
+        }
+    }
+
+    private record ContainerRef(BlockEntity blockEntity, Container container) {
+    }
+
+    private record ContainerCandidate(BlockPos pos, LevelChunk chunk, BlockEntity blockEntity, Container container, ContainerContents contents) {
+    }
+
+    private record ContainerContents(List<ItemStack> items) {
+        private static ContainerContents from(Container container) {
+            List<ItemStack> items = new ArrayList<>(container.getContainerSize());
+            for (int slot = 0; slot < container.getContainerSize(); slot++) {
+                items.add(container.getItem(slot).copy());
+            }
+            return new ContainerContents(List.copyOf(items));
+        }
+
+        private boolean sameContents(ContainerContents other) {
+            if (this.items.size() != other.items.size()) {
+                return false;
+            }
+
+            for (int slot = 0; slot < this.items.size(); slot++) {
+                if (!ItemStack.matches(this.items.get(slot), other.items.get(slot))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private boolean applyTo(Container container) {
+            if (container.getContainerSize() != this.items.size()) {
+                return false;
+            }
+
+            boolean changed = false;
+            for (int slot = 0; slot < this.items.size(); slot++) {
+                ItemStack item = this.items.get(slot);
+                if (!ItemStack.matches(container.getItem(slot), item)) {
+                    container.setItem(slot, item.copy());
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                container.setChanged();
+            }
+            return changed;
+        }
+
+        private boolean hasItems() {
+            for (ItemStack item : this.items) {
+                if (!item.isEmpty()) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -1002,6 +1262,10 @@ public final class ChunkPlaceBlockManager {
 
         private SavedPlacementRule toSavedRule() {
             return new SavedPlacementRule(this.localX, this.y, this.localZ, this.state, this.blockEntityTag);
+        }
+
+        private long localKey() {
+            return ChunkPlaceBlockManager.localKey(this.localX, this.y, this.localZ);
         }
 
         private BlockPos targetPos(LevelChunk chunk) {

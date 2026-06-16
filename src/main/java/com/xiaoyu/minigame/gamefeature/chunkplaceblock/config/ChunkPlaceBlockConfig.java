@@ -15,6 +15,7 @@ public final class ChunkPlaceBlockConfig {
     public static final ModConfigSpec.BooleanValue REQUIRE_ALL_TARGETS_EMPTY_FOR_MULTI_BLOCK;
     public static final ModConfigSpec.BooleanValue CHECK_PLACEMENT_SURVIVAL;
     public static final ModConfigSpec.BooleanValue COPY_BLOCK_ENTITY_DATA;
+    public static final ModConfigSpec.BooleanValue SYNC_CONTAINER_CONTENTS;
     public static final ModConfigSpec.BooleanValue PERSIST_PLACEMENT_RULES;
     public static final ModConfigSpec.BooleanValue SYNC_BREAKS;
     public static final ModConfigSpec.BooleanValue SYNC_BREAKS_ONLY_WHEN_SAME_BLOCK_BREAK_DISABLED;
@@ -104,6 +105,13 @@ public final class ChunkPlaceBlockConfig {
         COPY_BLOCK_ENTITY_DATA = builder
                 .comment("Copies placed block entity NBT, data components, and NeoForge persistent data to mirrored block entities.")
                 .define("copyBlockEntityData", true);
+
+        SYNC_CONTAINER_CONTENTS = builder
+                .comment(
+                        "Keeps inventories of mirrored container block entities, such as chests and barrels, synchronized across loaded chunks.",
+                        "Requires persistPlacementRules so the container's local chunk position can be tracked."
+                )
+                .define("syncContainerContents", true);
 
         PLACEMENT_UPDATE_FLAGS = builder
                 .comment(
