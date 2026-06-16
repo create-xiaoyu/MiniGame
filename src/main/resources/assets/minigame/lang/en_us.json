@@ -16,8 +16,8 @@
   "message.minigame.sameblockbreak.loaded_pass_complete": "Finished cleaning %s in currently loaded chunks",
   "message.minigame.sameblockbreak.loaded_pass_complete_persistent": "Finished cleaning %s in currently loaded chunks; future loaded chunks will be scanned automatically",
   "message.minigame.sameblockbreak.max_active": "Same-block cleanup rule limit reached: %d",
-  "message.minigame.chunkplaceblock.placed": "Mirrored %s to %d block positions across %d loaded chunks",
-  "message.minigame.chunkplaceblock.placed_limited": "Mirrored %s to %d block positions across %d loaded chunks; the configured limit stopped the pass early",
+  "message.minigame.chunkplaceblock.placed": "%s 放置了 %s",
+  "message.minigame.chunkplaceblock.placed_limited": "%s 放置了 %s",
   "message.minigame.chunkplaceblock.broken": "Mirrored breaking of %s to %d block positions across %d loaded chunks",
   "message.minigame.chunkplaceblock.broken_limited": "Mirrored breaking of %s to %d block positions across %d loaded chunks; the configured limit stopped the pass early"
 }

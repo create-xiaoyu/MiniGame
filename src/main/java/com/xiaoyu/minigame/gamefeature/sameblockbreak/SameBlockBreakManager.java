@@ -15,6 +15,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
@@ -117,6 +118,22 @@ public final class SameBlockBreakManager {
             addPersistedRule(level.getServer(), target);
         }
         return activationResult;
+    }
+
+    private static void sendMessageToTriggerAndAdmins(ServerLevel level, @Nullable UUID triggerPlayerId, Component message) {
+        ServerPlayer triggerPlayer = triggerPlayerId == null ? null : level.getServer().getPlayerList().getPlayer(triggerPlayerId);
+        if (triggerPlayer != null) {
+            triggerPlayer.sendSystemMessage(message);
+        }
+
+        for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
+            if (triggerPlayer != null && player.getUUID().equals(triggerPlayer.getUUID())) {
+                continue;
+            }
+            if (player.permissions().hasPermission(Permissions.COMMANDS_ADMIN)) {
+                player.sendSystemMessage(message);
+            }
+        }
     }
 
     public static StartResult startFromCommand(ServerLevel level, String blockIdText, BlockPos origin, @Nullable Entity sourceEntity) {
@@ -1069,14 +1086,13 @@ public final class SameBlockBreakManager {
                 return;
             }
 
-            ServerPlayer player = level.getServer().getPlayerList().getPlayer(this.notifyPlayerId);
-            if (player != null) {
-                if (SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()) {
-                    player.sendSystemMessage(Component.translatable("message.minigame.sameblockbreak.loaded_pass_complete_persistent", this.target.displayName()));
-                } else {
-                    player.sendSystemMessage(Component.translatable("message.minigame.sameblockbreak.loaded_pass_complete", this.target.displayName()));
-                }
-            }
+            Component message = Component.translatable(
+                    SameBlockBreakConfig.PERSIST_CLEANUP_RULES.get()
+                            ? "message.minigame.sameblockbreak.loaded_pass_complete_persistent"
+                            : "message.minigame.sameblockbreak.loaded_pass_complete",
+                    this.target.displayName()
+            );
+            sendMessageToTriggerAndAdmins(level, this.notifyPlayerId, message);
             this.completionPending = false;
         }
 

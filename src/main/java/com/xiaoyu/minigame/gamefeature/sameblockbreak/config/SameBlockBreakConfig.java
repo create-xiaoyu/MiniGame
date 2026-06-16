@@ -169,10 +169,9 @@ public final class SameBlockBreakConfig {
         RESERVE_BLOCK_CHANGES_FOR_SUPPORT_CLEANUP = builder
                 .comment(
                         "Reserves part of maxBlockChangesPerTick for unsupported-block cleanup.",
-                        "This makes dependent blocks such as lily pads disappear sooner during large fluid cleanups, but lowers the main cleanup throughput.",
-                        "Default is false to keep maximum cleanup speed."
+                        "This makes dependent blocks such as lily pads disappear sooner during large fluid cleanups, but lowers the main cleanup throughput."
                 )
-                .define("reserveBlockChangesForSupportCleanup", false);
+                .define("reserveBlockChangesForSupportCleanup", true);
 
         RESERVED_SUPPORT_BLOCK_CHANGES_PER_TICK = builder
                 .comment(

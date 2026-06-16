@@ -9,6 +9,7 @@ import com.xiaoyu.minigame.gamefeature.sameblockbreak.SameBlockBreakManager;
 import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfig;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
@@ -112,14 +113,7 @@ public final class ChunkPlaceBlockManager {
                 persistedRules
         );
 
-        if (sourceEntity instanceof ServerPlayer player && ChunkPlaceBlockConfig.SEND_PLACEMENT_MESSAGE.get()) {
-            player.sendSystemMessage(Component.translatable(
-                    result.limited ? "message.minigame.chunkplaceblock.placed_limited" : "message.minigame.chunkplaceblock.placed",
-                    blocks.getFirst().state().getBlock().getName(),
-                    result.changed,
-                    result.chunksVisited
-            ));
-        }
+        broadcastPlacementMessage(level, sourceEntity, blocks.getFirst().state());
     }
 
     public static void captureBucketPlacementCandidate(ServerLevel level, Player player, ItemStack stack, BlockPos clickedPos, Direction face) {
@@ -355,6 +349,21 @@ public final class ChunkPlaceBlockManager {
 
     private static ChunkPlaceBlockBreakSavedData breakSavedData(ServerLevel level) {
         return level.getDataStorage().computeIfAbsent(ChunkPlaceBlockBreakSavedData.TYPE);
+    }
+
+    private static void broadcastPlacementMessage(ServerLevel level, @Nullable Entity sourceEntity, BlockState state) {
+        if (!ChunkPlaceBlockConfig.SEND_PLACEMENT_MESSAGE.get() || sourceEntity == null) {
+            return;
+        }
+
+        level.getServer().getPlayerList().broadcastSystemMessage(
+                Component.translatable(
+                        "message.minigame.chunkplaceblock.placed",
+                        sourceEntity.getDisplayName(),
+                        state.getBlock().getName()
+                ).withStyle(ChatFormatting.RED),
+                false
+        );
     }
 
     private static @Nullable MirroredBlock captureMirroredBlock(ServerLevel level, BlockPos sourcePos) {
@@ -1164,14 +1173,7 @@ public final class ChunkPlaceBlockManager {
                 persistedRules
         );
 
-        if (player != null && ChunkPlaceBlockConfig.SEND_PLACEMENT_MESSAGE.get()) {
-            player.sendSystemMessage(Component.translatable(
-                    result.limited ? "message.minigame.chunkplaceblock.placed_limited" : "message.minigame.chunkplaceblock.placed",
-                    block.state().getBlock().getName(),
-                    result.changed,
-                    result.chunksVisited
-            ));
-        }
+        broadcastPlacementMessage(level, player, block.state());
     }
 
     private record ContainerRef(BlockEntity blockEntity, Container container) {

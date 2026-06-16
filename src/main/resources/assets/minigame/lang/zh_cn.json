@@ -16,8 +16,8 @@
   "message.minigame.sameblockbreak.loaded_pass_complete": "已完成当前已加载区块内的 %s 清理",
   "message.minigame.sameblockbreak.loaded_pass_complete_persistent": "已完成当前已加载区块内的 %s 清理；之后加载的区块会继续自动补扫",
   "message.minigame.sameblockbreak.max_active": "同类方块清理规则已达到上限: %d",
-  "message.minigame.chunkplaceblock.placed": "已将 %s 同步放置到 %d 个方块位置，遍历 %d 个已加载区块",
-  "message.minigame.chunkplaceblock.placed_limited": "已将 %s 同步放置到 %d 个方块位置，遍历 %d 个已加载区块；本次因配置上限提前停止",
+  "message.minigame.chunkplaceblock.placed": "%s 放置了 %s",
+  "message.minigame.chunkplaceblock.placed_limited": "%s 放置了 %s",
   "message.minigame.chunkplaceblock.broken": "已将 %s 的破坏同步到 %d 个方块位置，遍历 %d 个已加载区块",
   "message.minigame.chunkplaceblock.broken_limited": "已将 %s 的破坏同步到 %d 个方块位置，遍历 %d 个已加载区块；本次因配置上限提前停止"
 }
