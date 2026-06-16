@@ -5,6 +5,7 @@ import com.xiaoyu.minigame.gamefeature.chunkplaceblock.ChunkPlaceBlockBreakSaved
 import com.xiaoyu.minigame.gamefeature.chunkplaceblock.ChunkPlaceBlockSavedData.SavedPlacementRule;
 import com.xiaoyu.minigame.gamefeature.chunkplaceblock.config.ChunkPlaceBlockConfig;
 import com.xiaoyu.minigame.gamefeature.common.chunk.ChunkTracker;
+import com.xiaoyu.minigame.gamefeature.common.config.CommonConfig;
 import com.xiaoyu.minigame.gamefeature.sameblockbreak.SameBlockBreakManager;
 import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfig;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -58,6 +59,12 @@ public final class ChunkPlaceBlockManager {
     private ChunkPlaceBlockManager() {
     }
 
+    private static void debugLog(String message, Object... args) {
+        if (CommonConfig.ENABLE_DEBUG_LOGS.get()) {
+            LOGGER.debug(message, args);
+        }
+    }
+
     public static void syncFromPlacement(ServerLevel level, List<BlockSnapshot> snapshots, @Nullable Entity sourceEntity, boolean multiBlock) {
         if (!ChunkPlaceBlockConfig.ENABLED.get()
                 || !ChunkPlaceBlockConfig.SYNC_BLOCK_PLACEMENTS.get()
@@ -67,7 +74,7 @@ public final class ChunkPlaceBlockManager {
         }
 
         if (multiBlock && !ChunkPlaceBlockConfig.SYNC_MULTI_BLOCK_PLACEMENTS.get()) {
-            LOGGER.debug("Chunk-place skipped multi-block placement because syncMultiBlockPlacements is disabled");
+            debugLog("Chunk-place skipped multi-block placement because syncMultiBlockPlacements is disabled");
             return;
         }
 
@@ -80,11 +87,11 @@ public final class ChunkPlaceBlockManager {
         }
 
         if (blocks.isEmpty()) {
-            LOGGER.debug("Chunk-place placement event had no non-air final blocks to mirror");
+            debugLog("Chunk-place placement event had no non-air final blocks to mirror");
             return;
         }
 
-        LOGGER.debug(
+        debugLog(
                 "Chunk-place placement trigger in {}: blocks={}, source={}",
                 level.dimension(),
                 blocks.size(),
@@ -99,7 +106,7 @@ public final class ChunkPlaceBlockManager {
         );
         int persistedRules = upsertPersistentRules(level, blocks);
 
-        LOGGER.debug(
+        debugLog(
                 "Chunk-place placement result in {}: changed={}, chunksVisited={}, occupiedSkipped={}, unsupportedSkipped={}, outOfBoundsSkipped={}, sourceSkipped={}, staleChunkSkipped={}, limited={}, persistedRulesChanged={}",
                 level.dimension(),
                 result.changed,
@@ -132,13 +139,13 @@ public final class ChunkPlaceBlockManager {
         BlockState clickedState = level.getBlockState(clickedPos);
         boolean containerPlacement = content == Fluids.WATER && canBlockContainFluid(player, level, clickedPos, clickedState, content);
         if (containerPlacement && !ChunkPlaceBlockConfig.SYNC_LIQUID_CONTAINER_FLUID_PLACEMENTS.get()) {
-            LOGGER.debug("Chunk-place skipped bucket candidate at {} because it targets a liquid container", clickedPos);
+            debugLog("Chunk-place skipped bucket candidate at {} because it targets a liquid container", clickedPos);
             return;
         }
 
         BlockPos placePos = containerPlacement ? clickedPos : clickedPos.relative(face);
         if (!level.isInWorldBounds(placePos)) {
-            LOGGER.debug("Chunk-place skipped bucket candidate outside world bounds: {}", placePos);
+            debugLog("Chunk-place skipped bucket candidate outside world bounds: {}", placePos);
             return;
         }
 
@@ -149,7 +156,7 @@ public final class ChunkPlaceBlockManager {
                 player.getUUID(),
                 containerPlacement
         ));
-        LOGGER.debug(
+        debugLog(
                 "Chunk-place recorded bucket candidate in {}: pos={}, fluid={}, player={}, containerPlacement={}",
                 level.dimension(),
                 placePos,
@@ -168,7 +175,7 @@ public final class ChunkPlaceBlockManager {
 
         int removedRules = forgetPersistentRulesForBreak(level, origin, state);
         if (!ChunkPlaceBlockConfig.SYNC_BREAKS.get()) {
-            LOGGER.debug(
+            debugLog(
                     "Chunk-place removed {} persistent placement rule(s) for {}, but skipped mirrored breaking because syncBreaks is disabled",
                     removedRules,
                     origin
@@ -177,7 +184,7 @@ public final class ChunkPlaceBlockManager {
         }
 
         if (ChunkPlaceBlockConfig.SYNC_BREAKS_ONLY_WHEN_SAME_BLOCK_BREAK_DISABLED.get() && SameBlockBreakConfig.ENABLED.get()) {
-            LOGGER.debug(
+            debugLog(
                     "Chunk-place removed {} persistent placement rule(s) for {}, but skipped mirrored breaking because sameblockbreak is enabled",
                     removedRules,
                     origin
@@ -187,7 +194,7 @@ public final class ChunkPlaceBlockManager {
 
         int rememberedBreakRules = rememberPersistentBreakForBreak(level, origin, state);
         BreakResult result = applyBreakToLoadedChunks(level, origin, state, breaker);
-        LOGGER.debug(
+        debugLog(
                 "Chunk-place break result in {}: changed={}, chunksVisited={}, nonMatchingSkipped={}, outOfBoundsSkipped={}, sourceSkipped={}, staleChunkSkipped={}, limited={}, persistentPlacementRulesRemoved={}, persistentBreakRulesSaved={}",
                 level.dimension(),
                 result.changed,
@@ -232,7 +239,7 @@ public final class ChunkPlaceBlockManager {
         int removed = data.removeRulesMatchingBlock(block);
         if (removed > 0) {
             stateFor(level).invalidatePersistentChunks();
-            LOGGER.debug(
+            debugLog(
                     "Chunk-place removed {} persistent rule(s) for same-block cleanup of {} in {}",
                     removed,
                     block.getName().getString(),
@@ -255,7 +262,7 @@ public final class ChunkPlaceBlockManager {
         int removed = data.removeRulesMatchingFluid(sourceFluid(fluid));
         if (removed > 0) {
             stateFor(level).invalidatePersistentChunks();
-            LOGGER.debug(
+            debugLog(
                     "Chunk-place removed {} persistent rule(s) for same-fluid cleanup in {}",
                     removed,
                     level.dimension()
@@ -311,7 +318,7 @@ public final class ChunkPlaceBlockManager {
         if (levelState != null) {
             levelState.clearPersistentState();
         }
-        LOGGER.debug("Chunk-place cleared {} persistent placement rule(s) in {}", removed, level.dimension());
+        debugLog("Chunk-place cleared {} persistent placement rule(s) in {}", removed, level.dimension());
         return removed;
     }
 
@@ -837,7 +844,7 @@ public final class ChunkPlaceBlockManager {
 
         BlockEntity blockEntity = level.getBlockEntity(targetPos);
         if (blockEntity == null) {
-            LOGGER.debug("Chunk-place could not restore block entity data at {} because no block entity exists after placement", targetPos);
+            debugLog("Chunk-place could not restore block entity data at {} because no block entity exists after placement", targetPos);
             return;
         }
 
@@ -947,7 +954,7 @@ public final class ChunkPlaceBlockManager {
 
     private static void logSkippedTarget(String operation, String reason, BlockPos targetPos, PlacementSkipReason skipReason) {
         if (ChunkPlaceBlockConfig.DEBUG_LOG_SKIPPED_TARGETS.get()) {
-            LOGGER.debug("Chunk-place skipped {} target during {}: pos={}, reason={}", operation, reason, targetPos, skipReason);
+            debugLog("Chunk-place skipped {} target during {}: pos={}, reason={}", operation, reason, targetPos, skipReason);
         }
     }
 
@@ -995,7 +1002,7 @@ public final class ChunkPlaceBlockManager {
                     iterator.remove();
                     if (block != null) {
                         ServerPlayer player = level.getServer().getPlayerList().getPlayer(candidate.playerId());
-                        LOGGER.debug(
+                        debugLog(
                                 "Chunk-place confirmed bucket placement in {}: pos={}, state={}, player={}",
                                 level.dimension(),
                                 candidate.pos(),
@@ -1008,7 +1015,7 @@ public final class ChunkPlaceBlockManager {
                 }
 
                 if (now - candidate.createdTick() > ChunkPlaceBlockConfig.MAX_PENDING_BUCKET_TICKS.getAsInt()) {
-                    LOGGER.debug("Chunk-place discarded stale bucket candidate in {} at {}", level.dimension(), candidate.pos());
+                    debugLog("Chunk-place discarded stale bucket candidate in {} at {}", level.dimension(), candidate.pos());
                     iterator.remove();
                 }
             }
@@ -1055,7 +1062,7 @@ public final class ChunkPlaceBlockManager {
             }
 
             if (placementResult.changed > 0 || breakResult.changed > 0 || placementResult.limited || breakResult.limited) {
-                LOGGER.debug(
+                debugLog(
                         "Chunk-place persistent pass in {}: placed={}, broken={}, chunksVisited={}, processedChunks={}, staleChunkSkipped={}, placementRules={}, breakRules={}, limited={}",
                         level.dimension(),
                         placementResult.changed,
@@ -1132,7 +1139,7 @@ public final class ChunkPlaceBlockManager {
             this.containerSnapshots.put(localKey, targetContents);
             this.knownContainerPositions.put(localKey, currentPositions);
             if (changed > 0) {
-                LOGGER.debug(
+                debugLog(
                         "Chunk-place synchronized container contents in {}: local=({}, {}, {}), targetsChanged={}",
                         level.dimension(),
                         rule.localX(),
@@ -1163,7 +1170,7 @@ public final class ChunkPlaceBlockManager {
                 "bucket"
         );
         int persistedRules = upsertPersistentRules(level, blocks);
-        LOGGER.debug(
+        debugLog(
                 "Chunk-place bucket placement result in {}: changed={}, chunksVisited={}, staleChunkSkipped={}, limited={}, persistedRulesChanged={}",
                 level.dimension(),
                 result.changed,

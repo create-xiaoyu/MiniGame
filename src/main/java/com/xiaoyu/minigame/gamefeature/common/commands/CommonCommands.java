@@ -2,6 +2,7 @@ package com.xiaoyu.minigame.gamefeature.common.commands;
 
 import com.mojang.logging.LogUtils;
 import com.xiaoyu.minigame.gamefeature.common.chunk.ChunkTracker;
+import com.xiaoyu.minigame.gamefeature.common.config.CommonConfig;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -35,7 +36,9 @@ public class CommonCommands {
 
                                                     for (LevelChunk chunk : loadedChunks) {
                                                         count += 1;
-                                                        LOGGER.debug("Number: {}, Chunk: {}, State: {}", count, chunk.getPos(), chunk.getFullStatus().name());
+                                                        if (CommonConfig.ENABLE_DEBUG_LOGS.get()) {
+                                                            LOGGER.debug("Number: {}, Chunk: {}, State: {}", count, chunk.getPos(), chunk.getFullStatus().name());
+                                                        }
                                                         level.getHeight();
                                                         level.getMaxY();
                                                         level.getMaxSectionY();

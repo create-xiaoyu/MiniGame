@@ -5,10 +5,18 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 public class CommonConfig {
     public static final ModConfigSpec SPEC;
 
+    public static final ModConfigSpec.BooleanValue ENABLE_DEBUG_LOGS;
     public static final ModConfigSpec.IntValue MAX_PENDING_TICKS;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
+
+        ENABLE_DEBUG_LOGS = builder
+                .comment(
+                        "Enables verbose debug logging for MiniGame internals.",
+                        "Keep this disabled on normal servers unless you are diagnosing a bug; some logs can be very noisy in large worlds."
+                )
+                .define("enableDebugLogs", false);
 
         MAX_PENDING_TICKS = builder
                 .comment(
