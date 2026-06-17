@@ -38,6 +38,10 @@ public final class SameBlockBreakCommands {
                                                 ))))
                                 .then(Commands.literal("clearRules")
                                         .executes(context -> clearRules(context.getSource())))
+                                .then(Commands.literal("disable")
+                                        .executes(context -> disable(context.getSource())))
+                                .then(Commands.literal("enable")
+                                        .executes(context -> enable(context.getSource())))
                         )
         );
     }
@@ -95,5 +99,33 @@ public final class SameBlockBreakCommands {
         int removed = SameBlockBreakManager.clearRules(source.getLevel());
         source.sendSystemMessage(Component.translatable("command.minigame.sameblockbreak.clear.success", removed));
         return removed;
+    }
+
+    private static int disable(CommandSourceStack source) {
+        if (SameBlockBreakConfig.ENABLED.get()) {
+            SameBlockBreakManager.clearAll();
+
+            SameBlockBreakConfig.ENABLED.set(false);
+            SameBlockBreakConfig.ENABLED.save();
+
+            source.sendSystemMessage(Component.translatable("command.minigame.sameblockbreak.disable.success"));
+        } else {
+            source.sendSystemMessage(Component.translatable("command.minigame.sameblockbreak.disable.failure"));
+        }
+
+        return 1;
+    }
+
+    private static int enable(CommandSourceStack source) {
+        if (SameBlockBreakConfig.ENABLED.get()) {
+            source.sendSystemMessage(Component.translatable("command.minigame.sameblockbreak.enable.failure"));
+        } else {
+            SameBlockBreakConfig.ENABLED.set(true);
+            SameBlockBreakConfig.ENABLED.save();
+
+            source.sendSystemMessage(Component.translatable("command.minigame.sameblockbreak.enable.success"));
+        }
+
+        return 1;
     }
 }

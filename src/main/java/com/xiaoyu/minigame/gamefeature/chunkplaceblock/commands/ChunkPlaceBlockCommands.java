@@ -1,6 +1,9 @@
 package com.xiaoyu.minigame.gamefeature.chunkplaceblock.commands;
 
 import com.xiaoyu.minigame.gamefeature.chunkplaceblock.ChunkPlaceBlockManager;
+import com.xiaoyu.minigame.gamefeature.chunkplaceblock.config.ChunkPlaceBlockConfig;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.SameBlockBreakManager;
+import com.xiaoyu.minigame.gamefeature.sameblockbreak.config.SameBlockBreakConfig;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -23,6 +26,10 @@ public final class ChunkPlaceBlockCommands {
                                         .executes(context -> status(context.getSource())))
                                 .then(Commands.literal("clearRules")
                                         .executes(context -> clearRules(context.getSource())))
+                                .then(Commands.literal("disable")
+                                        .executes(context -> disable(context.getSource())))
+                                .then(Commands.literal("enable")
+                                        .executes(context -> enable(context.getSource())))
                         )
         );
     }
@@ -44,5 +51,33 @@ public final class ChunkPlaceBlockCommands {
         int removed = ChunkPlaceBlockManager.clearRules(source.getLevel());
         source.sendSystemMessage(Component.translatable("command.minigame.chunkplaceblock.clear.success", removed));
         return removed;
+    }
+
+    private static int disable(CommandSourceStack source) {
+        if (ChunkPlaceBlockConfig.ENABLED.get()) {
+            ChunkPlaceBlockManager.clearAll();
+
+            ChunkPlaceBlockConfig.ENABLED.set(false);
+            ChunkPlaceBlockConfig.ENABLED.save();
+
+            source.sendSystemMessage(Component.translatable("command.minigame.chunkplaceblock.disable.success"));
+        } else {
+            source.sendSystemMessage(Component.translatable("command.minigame.chunkplaceblock.disable.failure"));
+        }
+
+        return 1;
+    }
+
+    private static int enable(CommandSourceStack source) {
+        if (ChunkPlaceBlockConfig.ENABLED.get()) {
+            source.sendSystemMessage(Component.translatable("command.minigame.chunkplaceblock.enable.failure"));
+        } else {
+            ChunkPlaceBlockConfig.ENABLED.set(true);
+            ChunkPlaceBlockConfig.ENABLED.save();
+
+            source.sendSystemMessage(Component.translatable("command.minigame.chunkplaceblock.enable.success"));
+        }
+
+        return 1;
     }
 }
