@@ -3,9 +3,11 @@ package com.xiaoyu.minigame.gamefeature.common.chunk;
 import com.xiaoyu.minigame.gamefeature.common.config.CommonConfig;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
@@ -117,6 +119,36 @@ public class ChunkTracker {
         PENDING.remove(level);
     }
 
+    public static PlayerChunk getPlayerChunk(ServerPlayer player) {
+        ServerLevel level = player.level();
+        ChunkPos pos = player.chunkPosition();
+        ChunkAccess chunk = level.getChunk(pos.x(), pos.z());
+
+        int highestSectionIndex = chunk.getHighestFilledSectionIndex();
+        if (highestSectionIndex == -1) {
+            return new PlayerChunk(
+                    pos.getMaxBlockX(),
+                    level.getMinY() - 1,
+                    pos.getMaxBlockZ(),
+                    pos.getMinBlockX(),
+                    level.getMinY(),
+                    pos.getMinBlockZ()
+            );
+        }
+
+        int sectionY = chunk.getSectionYFromSectionIndex(highestSectionIndex);
+        int maxY = Math.min(level.getMaxY(), SectionPos.sectionToBlockCoord(sectionY) + 15);
+
+        return new PlayerChunk(
+                pos.getMaxBlockX(),
+                maxY,
+                pos.getMaxBlockZ(),
+                pos.getMinBlockX(),
+                level.getMinY(),
+                pos.getMinBlockZ()
+        );
+    }
+
     private static void removeLoaded(ServerLevel level, long chunkKey) {
         Long2ObjectMap<LevelChunk> chunks = LOADED.get(level);
         if (chunks == null) {
@@ -148,4 +180,13 @@ public class ChunkTracker {
             return new PendingChunk(this.chunk, this.pendingTicks + 1);
         }
     }
+
+    public record PlayerChunk(
+            int maxX,
+            int maxY,
+            int maxZ,
+            int minX,
+            int minY,
+            int minZ
+    ) {}
 }

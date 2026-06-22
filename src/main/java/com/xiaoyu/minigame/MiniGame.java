@@ -1,6 +1,7 @@
 package com.xiaoyu.minigame;
 
 import com.xiaoyu.minigame.gamefeature.common.CommonFeature;
+import com.xiaoyu.minigame.gamefeature.hurtchunkbreak.HurtChunkBreakFeature;
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
@@ -19,5 +20,6 @@ public class MiniGame {
         CommonFeature.register(modContainer);
         SameBlockBreakFeature.register(modContainer);
         ChunkPlaceBlockFeature.register(modContainer);
+        HurtChunkBreakFeature.register(modContainer);
     }
 }

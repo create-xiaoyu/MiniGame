@@ -1258,7 +1258,7 @@ public final class SameBlockBreakManager {
         }
 
         int highestFilledSectionIndex = chunk.getHighestFilledSectionIndex();
-        if (highestFilledSectionIndex < 0) {
+        if (highestFilledSectionIndex == -1) {
             return chunk.getMinSectionY() - 1;
         }
 
